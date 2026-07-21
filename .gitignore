@@ -1,0 +1,39 @@
+# Node / frontend
+node_modules/
+frontend/dist/
+*.local
+
+# Python / backend
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Video files — test videos live outside the repo (../ammtek-rnd-videos/)
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.m4v
+
+# Generated outputs (extracted backgrounds, masks, frames)
+outputs/
+output/
+results/
+*.npy
+*.npz
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Env
+.env
+.env.*

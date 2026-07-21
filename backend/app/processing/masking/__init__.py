@@ -1,0 +1,1 @@
+"""Foreground mask generation methods."""
