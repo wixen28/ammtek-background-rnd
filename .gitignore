@@ -21,6 +21,9 @@ venv/
 *.webm
 *.m4v
 
+# Local video store (current working input for experiments)
+backend/data/
+
 # Generated outputs (extracted backgrounds, masks, frames)
 outputs/
 output/
