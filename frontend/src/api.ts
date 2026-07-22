@@ -35,6 +35,31 @@ export async function uploadVideo(file: File): Promise<VideoRecord> {
   return res.json()
 }
 
+export interface RgbMeanParams {
+  target_frames: number
+  resize: [number, number] | null
+}
+
+export interface RgbMeanResult {
+  target_frames: number
+  every_n: number
+  sampled_frames: number
+  resize: [number, number] | null
+  processing_time_seconds: number
+  background: string
+  previews: string[]
+}
+
+export async function runRgbMean(params: RgbMeanParams): Promise<RgbMeanResult> {
+  const res = await fetch(`${API_BASE_URL}/api/experiments/rgb-mean`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) throw new Error(await errorDetail(res))
+  return res.json()
+}
+
 export async function getCurrentVideo(): Promise<VideoRecord | null> {
   const res = await fetch(`${API_BASE_URL}/api/videos/current`)
   if (res.status === 404) return null

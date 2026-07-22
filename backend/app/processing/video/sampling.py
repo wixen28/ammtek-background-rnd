@@ -73,6 +73,18 @@ def _iter_frames(
         capture.release()
 
 
+def spread_every_n(frame_count: int, target_frames: int) -> int:
+    """Sampling interval that spreads ~target_frames across the whole video.
+
+    Combining every_n with max_frames alone would take frames only from the
+    start of the video; deriving every_n from the total frame count keeps
+    the samples distributed over its full duration.
+    """
+    if target_frames < 1:
+        raise ValueError("target_frames must be at least 1.")
+    return max(1, frame_count // target_frames)
+
+
 def sample_current_video(
     every_n: int = 1,
     max_frames: int | None = None,

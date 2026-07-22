@@ -153,3 +153,43 @@ button.nav-item:hover {
   font-weight: 500;
   padding-right: 2rem;
 }
+
+.experiment-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.experiment-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.experiment-controls input {
+  width: 7rem;
+  padding: 0.3rem 0.4rem;
+}
+
+.experiment-results h3 {
+  margin: 1.25rem 0 0.5rem;
+}
+
+.preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.preview-row img {
+  display: block;
+  border-radius: 4px;
+}
+
+.background-image {
+  max-width: 100%;
+  border-radius: 4px;
+}

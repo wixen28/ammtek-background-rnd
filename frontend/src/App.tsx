@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
 import { checkHealth, getCurrentVideo, type VideoRecord } from './api'
+import RgbMeanPage from './pages/RgbMeanPage'
 import VideoInputPage from './pages/VideoInputPage'
 import './App.css'
 
 type BackendStatus = 'checking' | 'online' | 'offline'
-type View = 'overview' | 'video-input'
+type View = 'overview' | 'video-input' | 'rgb-mean'
 
 const NAV_ITEMS: { view: View; label: string }[] = [
   { view: 'overview', label: 'Overview' },
   { view: 'video-input', label: 'Video Input' },
+  { view: 'rgb-mean', label: 'RGB Mean' },
 ]
 
 function OverviewPage() {
@@ -78,14 +80,14 @@ function App() {
       </aside>
 
       <main className="content">
-        {view === 'overview' ? (
-          <OverviewPage />
-        ) : (
+        {view === 'overview' && <OverviewPage />}
+        {view === 'video-input' && (
           <VideoInputPage
             currentVideo={currentVideo}
             onVideoChange={setCurrentVideo}
           />
         )}
+        {view === 'rgb-mean' && <RgbMeanPage currentVideo={currentVideo} />}
       </main>
     </div>
   )
