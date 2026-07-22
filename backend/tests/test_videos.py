@@ -1,29 +1,16 @@
 import json
 from pathlib import Path
 
-import cv2
-import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.processing.video import store
+from tests.conftest import FPS, HEIGHT, WIDTH, make_video
 
 client = TestClient(create_app())
 
-WIDTH, HEIGHT, FPS, FRAMES = 64, 48, 10.0, 20
-
-
-def make_video(path: Path, frames: int = FRAMES) -> Path:
-    writer = cv2.VideoWriter(
-        str(path), cv2.VideoWriter_fourcc(*"MJPG"), FPS, (WIDTH, HEIGHT)
-    )
-    assert writer.isOpened()
-    for i in range(frames):
-        frame = np.full((HEIGHT, WIDTH, 3), i * 10 % 255, dtype=np.uint8)
-        writer.write(frame)
-    writer.release()
-    return path
+FRAMES = 20
 
 
 @pytest.fixture(autouse=True)
