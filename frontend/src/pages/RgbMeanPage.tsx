@@ -13,6 +13,7 @@ interface RgbMeanPageProps {
 }
 
 function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
+  const [useAllFrames, setUseAllFrames] = useState(true)
   const [targetFrames, setTargetFrames] = useState(30)
   const [resizeWidth, setResizeWidth] = useState('')
   const [resizeHeight, setResizeHeight] = useState('')
@@ -39,7 +40,13 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
     setLoading(true)
     setError(null)
     try {
-      setResult(await runRgbMean({ target_frames: targetFrames, resize }))
+      setResult(
+        await runRgbMean({
+          use_all_frames: useAllFrames,
+          target_frames: targetFrames,
+          resize,
+        }),
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Experiment failed.')
     } finally {
@@ -122,12 +129,21 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
       </p>
 
       <div className="experiment-controls">
+        <label className="experiment-checkbox">
+          <input
+            type="checkbox"
+            checked={useAllFrames}
+            onChange={(e) => setUseAllFrames(e.target.checked)}
+          />
+          Use all frames
+        </label>
         <label>
           Target frames
           <input
             type="number"
             min={1}
             value={targetFrames}
+            disabled={useAllFrames}
             onChange={(e) => setTargetFrames(Number(e.target.value))}
           />
         </label>
@@ -151,23 +167,33 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
             onChange={(e) => setResizeHeight(e.target.value)}
           />
         </label>
-        <button onClick={handleRun} disabled={loading || targetFrames < 1}>
+        <button
+          onClick={handleRun}
+          disabled={loading || (!useAllFrames && targetFrames < 1)}
+        >
           {loading ? 'Running…' : 'Run'}
         </button>
       </div>
+
+      <p className="content-hint">
+        {useAllFrames
+          ? `All ${currentVideo.frame_count} frames will be used.`
+          : `~${Math.min(targetFrames, currentVideo.frame_count)} frames will be sampled evenly across the video.`}
+      </p>
 
       {error && <p className="video-error">{error}</p>}
 
       {result && (
         <section className="experiment-results">
           <p className="content-hint">
-            Sampled {result.sampled_frames} frames (every {result.every_n}
-            {'‑'}th of {currentVideo.frame_count}) in{' '}
-            {result.processing_time_seconds.toFixed(2)} s
+            Frames used:{' '}
+            {result.use_all_frames
+              ? `All ${result.sampled_frames} frames`
+              : `${result.sampled_frames} of ${currentVideo.frame_count} (every ${result.every_n}‑th)`}{' '}
+            · {result.processing_time_seconds.toFixed(2)} s
             {result.resize
-              ? `, resized to ${result.resize[0]} × ${result.resize[1]}`
+              ? ` · resized to ${result.resize[0]} × ${result.resize[1]}`
               : ''}
-            .
           </p>
 
           <h3>Sampled frames</h3>
@@ -177,28 +203,6 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
             ))}
           </div>
 
-          <h3>Generated background</h3>
-          <p className="content-hint">
-            Click the background to pick a pixel for the timeline analysis
-            below.
-          </p>
-          <div className="pixel-select-wrap">
-            <img
-              className="background-image background-image-clickable"
-              src={result.background}
-              alt="Generated background"
-              onClick={handleImageClick}
-            />
-            {hasSelection && (
-              <span
-                className="pixel-marker"
-                style={{
-                  left: `${((selectedX + 0.5) / currentVideo.width) * 100}%`,
-                  top: `${((selectedY + 0.5) / currentVideo.height) * 100}%`,
-                }}
-              />
-            )}
-          </div>
         </section>
       )}
 
@@ -206,51 +210,80 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
         <h3>Pixel Timeline Analysis</h3>
         <p className="content-hint">
           Reads the selected pixel from every frame of the video — a
-          diagnostic for designing outlier rejection. Pick a pixel by
-          clicking the generated background above or enter coordinates
-          manually.
+          diagnostic for designing outlier rejection.
         </p>
 
-        <div className="experiment-controls">
-          <label>
-            X (0–{currentVideo.width - 1})
-            <input
-              type="number"
-              min={0}
-              max={currentVideo.width - 1}
-              value={pixelX}
-              onChange={(e) => setPixelX(e.target.value)}
-            />
-          </label>
-          <label>
-            Y (0–{currentVideo.height - 1})
-            <input
-              type="number"
-              min={0}
-              max={currentVideo.height - 1}
-              value={pixelY}
-              onChange={(e) => setPixelY(e.target.value)}
-            />
-          </label>
-          <button
-            onClick={handleAnalyzePixel}
-            disabled={timelineLoading || !hasSelection}
-          >
-            {timelineLoading ? 'Analyzing…' : 'Analyze Pixel'}
-          </button>
-        </div>
+        <div className="pixel-layout">
+          {result && (
+            <div className="pixel-layout-preview">
+              <h4>Generated Background</h4>
+              <p className="content-hint">Click to select a pixel.</p>
+              <div className="pixel-select-wrap">
+                <img
+                  className="background-image background-image-clickable"
+                  src={result.background}
+                  alt="Generated background"
+                  onClick={handleImageClick}
+                />
+                {hasSelection && (
+                  <span
+                    className="pixel-marker"
+                    style={{
+                      left: `${((selectedX + 0.5) / currentVideo.width) * 100}%`,
+                      top: `${((selectedY + 0.5) / currentVideo.height) * 100}%`,
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          )}
 
-        {timelineError && <p className="video-error">{timelineError}</p>}
-
-        {timeline && (
-          <>
-            <p className="content-hint">
-              Pixel ({timeline.x}, {timeline.y}) · {timeline.frame_count}{' '}
-              frames analyzed
+          <div className="pixel-layout-analysis">
+            <h4>Selected Pixel</h4>
+            <p className="pixel-coords">
+              {hasSelection
+                ? `(${selectedX}, ${selectedY})`
+                : result
+                  ? 'none — click the preview or enter coordinates'
+                  : 'none — enter coordinates, or run RGB Mean for a clickable preview'}
+              {timeline &&
+                ` · ${timeline.frame_count} frames analyzed at (${timeline.x}, ${timeline.y})`}
             </p>
-            <RgbLineChart frames={timeline.frames} />
-          </>
-        )}
+
+            <div className="experiment-controls">
+              <label>
+                X (0–{currentVideo.width - 1})
+                <input
+                  type="number"
+                  min={0}
+                  max={currentVideo.width - 1}
+                  value={pixelX}
+                  onChange={(e) => setPixelX(e.target.value)}
+                />
+              </label>
+              <label>
+                Y (0–{currentVideo.height - 1})
+                <input
+                  type="number"
+                  min={0}
+                  max={currentVideo.height - 1}
+                  value={pixelY}
+                  onChange={(e) => setPixelY(e.target.value)}
+                />
+              </label>
+              <button
+                onClick={handleAnalyzePixel}
+                disabled={timelineLoading || !hasSelection}
+              >
+                {timelineLoading ? 'Analyzing…' : 'Analyze Pixel'}
+              </button>
+            </div>
+
+            {timelineError && <p className="video-error">{timelineError}</p>}
+
+            {timeline && <RgbLineChart frames={timeline.frames} />}
+          </div>
+        </div>
       </section>
     </>
   )

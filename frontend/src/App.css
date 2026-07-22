@@ -174,6 +174,24 @@ button.nav-item:hover {
   padding: 0.3rem 0.4rem;
 }
 
+.experiment-controls input:disabled {
+  opacity: 0.5;
+}
+
+.experiment-controls .experiment-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  padding-bottom: 0.45rem;
+  color: #1f2328;
+  font-size: 0.875rem;
+}
+
+.experiment-controls .experiment-checkbox input {
+  width: auto;
+  margin: 0;
+}
+
 .experiment-results h3 {
   margin: 1.25rem 0 0.5rem;
 }
@@ -205,6 +223,17 @@ button.nav-item:hover {
   max-width: 100%;
 }
 
+/* The preview scales to the column width (aspect ratio preserved); the
+   height cap only guards against extreme portrait videos. max-* keeps the
+   element box equal to the rendered image, which the click-to-pixel
+   mapping and marker positioning rely on. */
+.pixel-layout-preview .background-image {
+  max-width: 100%;
+  max-height: 480px;
+  width: auto;
+  height: auto;
+}
+
 .pixel-marker {
   position: absolute;
   width: 12px;
@@ -225,9 +254,52 @@ button.nav-item:hover {
   margin-bottom: 0.5rem;
 }
 
+.pixel-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto;
+  align-items: start;
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 960px) {
+  .pixel-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Both columns share the same head rhythm: heading row, one text row,
+   then content — so the image and the controls start at the same level. */
+.pixel-layout h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
+.pixel-layout .content-hint,
+.pixel-layout .pixel-coords {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0 0 0.6rem;
+}
+
+.pixel-layout-analysis .experiment-controls {
+  margin: 0 0 0.6rem;
+}
+
+.pixel-layout-analysis .video-error {
+  margin: 0 0 0.6rem;
+}
+
+.pixel-coords {
+  font-variant-numeric: tabular-nums;
+  color: #52514e;
+}
+
 .chart {
-  max-width: 720px;
-  margin-top: 0.75rem;
+  width: 100%;
+  margin-top: 0.4rem;
 }
 
 .chart svg {

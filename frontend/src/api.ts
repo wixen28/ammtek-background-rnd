@@ -36,12 +36,14 @@ export async function uploadVideo(file: File): Promise<VideoRecord> {
 }
 
 export interface RgbMeanParams {
+  use_all_frames: boolean
   target_frames: number
   resize: [number, number] | null
 }
 
 export interface RgbMeanResult {
-  target_frames: number
+  use_all_frames: boolean
+  target_frames: number | null
   every_n: number
   sampled_frames: number
   resize: [number, number] | null

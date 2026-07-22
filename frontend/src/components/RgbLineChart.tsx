@@ -28,6 +28,9 @@ function RgbLineChart({ frames }: { frames: PixelSample[] }) {
   const x = (i: number) => M.left + (n > 1 ? (i / (n - 1)) * IW : IW / 2)
   const y = (v: number) => M.top + (1 - v / 255) * IH
 
+  // Dot size adapts to density so individual frames stay distinguishable.
+  const dotRadius = n > 300 ? 1.75 : n > 120 ? 2.5 : 3.5
+
   const linePath = (key: 'r' | 'g' | 'b') =>
     frames
       .map((f, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(f[key]).toFixed(1)}`)
@@ -117,15 +120,33 @@ function RgbLineChart({ frames }: { frames: PixelSample[] }) {
           frame index
         </text>
 
+        {/* Connecting lines as a subtle aid; the per-frame dots carry the data. */}
         {SERIES.map((s) => (
           <path
             key={s.key}
             d={linePath(s.key)}
             fill="none"
             stroke={s.color}
-            strokeWidth={2}
+            strokeWidth={1.25}
+            strokeOpacity={0.45}
             strokeLinejoin="round"
           />
+        ))}
+
+        {SERIES.map((s) => (
+          <g key={`dots-${s.key}`}>
+            {frames.map((f, i) => (
+              <circle
+                key={f.frame_index}
+                cx={x(i)}
+                cy={y(f[s.key])}
+                r={dotRadius}
+                fill={s.color}
+                stroke="#ffffff"
+                strokeWidth={0.75}
+              />
+            ))}
+          </g>
         ))}
 
         {endLabels.map((s) => (
@@ -159,7 +180,7 @@ function RgbLineChart({ frames }: { frames: PixelSample[] }) {
                 key={s.key}
                 cx={x(hover)}
                 cy={y(hovered[s.key])}
-                r={3.5}
+                r={dotRadius + 2}
                 fill={s.color}
                 stroke="#ffffff"
                 strokeWidth={2}

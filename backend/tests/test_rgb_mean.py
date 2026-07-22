@@ -41,10 +41,22 @@ def test_spread_every_n() -> None:
         spread_every_n(100, 0)
 
 
+def test_run_rgb_mean_all_frames(stored_video: dict) -> None:
+    # All 20 frames, fill values 0,5,...,95 -> mean 47.5.
+    result = run_rgb_mean()
+    assert result.use_all_frames is True
+    assert result.target_frames is None
+    assert result.every_n == 1
+    assert result.sampled_frames == 20
+    assert float(result.background.mean()) == pytest.approx(47.5, abs=2.0)
+
+
 def test_run_rgb_mean_computes_mean(stored_video: dict) -> None:
     # 20 frames, target 5 -> every_n=4 -> samples frames 0,4,8,12,16
     # (fill values 0,20,40,60,80 -> mean 40).
-    result = run_rgb_mean(target_frames=5)
+    result = run_rgb_mean(target_frames=5, use_all_frames=False)
+    assert result.use_all_frames is False
+    assert result.target_frames == 5
     assert result.every_n == 4
     assert result.sampled_frames == 5
     assert result.background.shape == (HEIGHT, WIDTH, 3)
@@ -56,7 +68,7 @@ def test_run_rgb_mean_computes_mean(stored_video: dict) -> None:
 
 
 def test_run_rgb_mean_with_resize(stored_video: dict) -> None:
-    result = run_rgb_mean(target_frames=5, resize=(32, 16))
+    result = run_rgb_mean(target_frames=5, resize=(32, 16), use_all_frames=False)
     assert result.background.shape == (16, 32, 3)
 
 
@@ -67,10 +79,12 @@ def test_run_rgb_mean_without_video(empty_store: None) -> None:
 
 def test_endpoint_returns_result(stored_video: dict) -> None:
     response = client.post(
-        "/api/experiments/rgb-mean", json={"target_frames": 5}
+        "/api/experiments/rgb-mean",
+        json={"target_frames": 5, "use_all_frames": False},
     )
     assert response.status_code == 200
     body = response.json()
+    assert body["use_all_frames"] is False
     assert body["target_frames"] == 5
     assert body["every_n"] == 4
     assert body["sampled_frames"] == 5
@@ -85,10 +99,14 @@ def test_endpoint_returns_result(stored_video: dict) -> None:
     assert decode_data_url(body["previews"][0]).shape[1] == 160
 
 
-def test_endpoint_defaults(stored_video: dict) -> None:
+def test_endpoint_defaults_to_all_frames(stored_video: dict) -> None:
     response = client.post("/api/experiments/rgb-mean", json={})
     assert response.status_code == 200
-    assert response.json()["target_frames"] == 30
+    body = response.json()
+    assert body["use_all_frames"] is True
+    assert body["target_frames"] is None
+    assert body["every_n"] == 1
+    assert body["sampled_frames"] == 20
 
 
 def test_endpoint_without_video_returns_404(empty_store: None) -> None:

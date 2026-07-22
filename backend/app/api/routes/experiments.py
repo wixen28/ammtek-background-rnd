@@ -12,6 +12,7 @@ router = APIRouter(tags=["experiments"])
 
 
 class RgbMeanRequest(BaseModel):
+    use_all_frames: bool = True
     target_frames: int = Field(default=30, ge=1)
     resize: tuple[PositiveInt, PositiveInt] | None = None
 
@@ -20,7 +21,9 @@ class RgbMeanRequest(BaseModel):
 def rgb_mean(request: RgbMeanRequest) -> dict:
     try:
         result = run_rgb_mean(
-            target_frames=request.target_frames, resize=request.resize
+            target_frames=request.target_frames,
+            resize=request.resize,
+            use_all_frames=request.use_all_frames,
         )
     except NoCurrentVideoError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -28,6 +31,7 @@ def rgb_mean(request: RgbMeanRequest) -> dict:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return {
+        "use_all_frames": result.use_all_frames,
         "target_frames": result.target_frames,
         "every_n": result.every_n,
         "sampled_frames": result.sampled_frames,
