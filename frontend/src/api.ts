@@ -60,6 +60,32 @@ export async function runRgbMean(params: RgbMeanParams): Promise<RgbMeanResult> 
   return res.json()
 }
 
+export interface PixelSample {
+  frame_index: number
+  timestamp_seconds: number
+  r: number
+  g: number
+  b: number
+}
+
+export interface PixelTimeline {
+  x: number
+  y: number
+  frame_count: number
+  frames: PixelSample[]
+}
+
+export async function getPixelTimeline(
+  x: number,
+  y: number,
+): Promise<PixelTimeline> {
+  const res = await fetch(
+    `${API_BASE_URL}/api/experiments/pixel-timeline?x=${x}&y=${y}`,
+  )
+  if (!res.ok) throw new Error(await errorDetail(res))
+  return res.json()
+}
+
 export async function getCurrentVideo(): Promise<VideoRecord | null> {
   const res = await fetch(`${API_BASE_URL}/api/videos/current`)
   if (res.status === 404) return null

@@ -1,8 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from dataclasses import asdict
+
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, PositiveInt
 
 from app.api.encoding import to_data_url
 from app.processing.background.rgb_mean import run_rgb_mean
+from app.processing.video.pixel_timeline import run_pixel_timeline
 from app.processing.video.sampling import NoCurrentVideoError
 
 router = APIRouter(tags=["experiments"])
@@ -32,4 +35,21 @@ def rgb_mean(request: RgbMeanRequest) -> dict:
         "processing_time_seconds": result.processing_time_seconds,
         "background": to_data_url(result.background, ".png"),
         "previews": [to_data_url(p, ".jpg") for p in result.previews],
+    }
+
+
+@router.get("/experiments/pixel-timeline")
+def pixel_timeline(x: int = Query(ge=0), y: int = Query(ge=0)) -> dict:
+    try:
+        result = run_pixel_timeline(x, y)
+    except NoCurrentVideoError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "x": result.x,
+        "y": result.y,
+        "frame_count": result.frame_count,
+        "frames": [asdict(sample) for sample in result.frames],
     }

@@ -193,3 +193,134 @@ button.nav-item:hover {
   max-width: 100%;
   border-radius: 4px;
 }
+
+.background-image-clickable {
+  cursor: crosshair;
+  display: block;
+}
+
+.pixel-select-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.pixel-marker {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background-color: #1c5cab;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+.pixel-section {
+  margin-top: 2rem;
+}
+
+.pixel-section h3 {
+  margin-bottom: 0.5rem;
+}
+
+.chart {
+  max-width: 720px;
+  margin-top: 0.75rem;
+}
+
+.chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.8rem;
+  color: #52514e;
+}
+
+.chart-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 0.35rem;
+}
+
+.chart-tick {
+  fill: #898781;
+  font-size: 10px;
+}
+
+.chart-axis-label {
+  fill: #898781;
+  font-size: 11px;
+}
+
+.chart-direct-label {
+  fill: #1f2328;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.chart-tt-title {
+  fill: #1f2328;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.chart-tt-row {
+  fill: #52514e;
+  font-size: 11px;
+}
+
+.chart-tt-value {
+  fill: #1f2328;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart details {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.chart summary {
+  cursor: pointer;
+  color: #52514e;
+}
+
+.chart-table-scroll {
+  max-height: 240px;
+  overflow-y: auto;
+  margin-top: 0.5rem;
+  border: 1px solid #e1e0d9;
+  border-radius: 4px;
+}
+
+.chart-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-table th,
+.chart-table td {
+  padding: 0.25rem 0.75rem;
+  text-align: right;
+  border-bottom: 1px solid #e1e0d9;
+}
+
+.chart-table th {
+  position: sticky;
+  top: 0;
+  background: #ffffff;
+  color: #52514e;
+  font-weight: 500;
+}
