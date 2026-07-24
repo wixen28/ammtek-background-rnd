@@ -39,6 +39,7 @@ export interface RgbMeanParams {
   use_all_frames: boolean
   target_frames: number
   resize: [number, number] | null
+  rejection_threshold: number
 }
 
 export interface RgbMeanResult {
@@ -47,6 +48,10 @@ export interface RgbMeanResult {
   every_n: number
   sampled_frames: number
   resize: [number, number] | null
+  rejection_threshold: number
+  rejected_fraction: number
+  fallback_pixels: number
+  method: string
   processing_time_seconds: number
   background: string
   previews: string[]

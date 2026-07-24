@@ -215,6 +215,11 @@ button.nav-item:hover {
 .background-image-clickable {
   cursor: crosshair;
   display: block;
+  /* Drag-to-scrub uses pointer capture; keep the browser from turning the
+     gesture into scrolling, image dragging, or text selection. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .pixel-select-wrap {
