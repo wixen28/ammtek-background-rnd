@@ -67,6 +67,36 @@ export async function runRgbMean(params: RgbMeanParams): Promise<RgbMeanResult> 
   return res.json()
 }
 
+export interface RgbMedianParams {
+  use_all_frames: boolean
+  target_frames: number
+  resize: [number, number] | null
+}
+
+export interface RgbMedianResult {
+  use_all_frames: boolean
+  target_frames: number | null
+  every_n: number
+  sampled_frames: number
+  resize: [number, number] | null
+  method: string
+  processing_time_seconds: number
+  background: string
+  previews: string[]
+}
+
+export async function runRgbMedian(
+  params: RgbMedianParams,
+): Promise<RgbMedianResult> {
+  const res = await fetch(`${API_BASE_URL}/api/experiments/rgb-median`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) throw new Error(await errorDetail(res))
+  return res.json()
+}
+
 export interface PixelSample {
   frame_index: number
   timestamp_seconds: number

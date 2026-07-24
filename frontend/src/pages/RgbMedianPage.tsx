@@ -1,20 +1,19 @@
 import { useState } from 'react'
-import { runRgbMean, type RgbMeanResult, type VideoRecord } from '../api'
+import { runRgbMedian, type RgbMedianResult, type VideoRecord } from '../api'
 import PixelTimelineSection from '../components/PixelTimelineSection'
 
-interface RgbMeanPageProps {
+interface RgbMedianPageProps {
   currentVideo: VideoRecord | null
 }
 
-function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
+function RgbMedianPage({ currentVideo }: RgbMedianPageProps) {
   const [useAllFrames, setUseAllFrames] = useState(true)
   const [targetFrames, setTargetFrames] = useState(30)
-  const [rejectionThreshold, setRejectionThreshold] = useState(30)
   const [resizeWidth, setResizeWidth] = useState('')
   const [resizeHeight, setResizeHeight] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<RgbMeanResult | null>(null)
+  const [result, setResult] = useState<RgbMedianResult | null>(null)
 
   const handleRun = async () => {
     const width = Number(resizeWidth)
@@ -25,20 +24,15 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
       setError('Resize width and height must be positive integers.')
       return
     }
-    if (!Number.isFinite(rejectionThreshold) || rejectionThreshold < 0) {
-      setError('Outlier threshold must be zero or a positive number.')
-      return
-    }
 
     setLoading(true)
     setError(null)
     try {
       setResult(
-        await runRgbMean({
+        await runRgbMedian({
           use_all_frames: useAllFrames,
           target_frames: targetFrames,
           resize,
-          rejection_threshold: rejectionThreshold,
         }),
       )
     } catch (err) {
@@ -51,7 +45,7 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
   if (!currentVideo) {
     return (
       <>
-        <h2>RGB Mean</h2>
+        <h2>RGB Median</h2>
         <p className="content-hint">
           No input video. Upload one on the Video Input page first.
         </p>
@@ -61,12 +55,12 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
 
   return (
     <>
-      <h2>RGB Mean</h2>
+      <h2>RGB Median</h2>
       <p>
-        Averages sampled frames per pixel with outlier rejection: samples
-        farther than the threshold (Euclidean RGB distance) from the
-        pixel&apos;s temporal median — foreground passes — are discarded
-        before the mean. Threshold 442 disables rejection (plain mean).
+        Takes the per-channel temporal median of the sampled frames and uses
+        it directly as the background. Brief foreground passes cannot move
+        the median, so no outlier rejection is applied — a comparison
+        experiment for RGB Mean + outlier rejection on the same input video.
       </p>
       <p className="content-hint">
         Input: {currentVideo.filename} ({currentVideo.width} ×{' '}
@@ -112,16 +106,6 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
             onChange={(e) => setResizeHeight(e.target.value)}
           />
         </label>
-        <label>
-          Outlier threshold
-          <input
-            type="number"
-            min={0}
-            max={442}
-            value={rejectionThreshold}
-            onChange={(e) => setRejectionThreshold(Number(e.target.value))}
-          />
-        </label>
         <button
           onClick={handleRun}
           disabled={loading || (!useAllFrames && targetFrames < 1)}
@@ -148,12 +132,7 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
             · {result.processing_time_seconds.toFixed(2)} s
             {result.resize
               ? ` · resized to ${result.resize[0]} × ${result.resize[1]}`
-              : ''}{' '}
-            · threshold {result.rejection_threshold}:{' '}
-            {(result.rejected_fraction * 100).toFixed(1)}% of samples
-            rejected
-            {result.fallback_pixels > 0 &&
-              ` · ${result.fallback_pixels} px fell back to the median (all samples rejected)`}
+              : ''}
           </p>
 
           <h3>Sampled frames</h3>
@@ -169,11 +148,11 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
       <PixelTimelineSection
         currentVideo={currentVideo}
         background={result?.background ?? null}
-        experimentName="RGB Mean"
-        downloadName="rgb-mean-background.png"
+        experimentName="RGB Median"
+        downloadName="rgb-median-background.png"
       />
     </>
   )
 }
 
-export default RgbMeanPage
+export default RgbMedianPage

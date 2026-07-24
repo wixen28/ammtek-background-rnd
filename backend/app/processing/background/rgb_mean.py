@@ -17,18 +17,15 @@ bounded regardless of resolution.
 import time
 from dataclasses import dataclass
 
-import cv2
 import numpy as np
 
+from app.processing.background.previews import PREVIEW_MAX, thumbnail
 from app.processing.video import store
 from app.processing.video.sampling import (
     NoCurrentVideoError,
     sample_current_video,
     spread_every_n,
 )
-
-PREVIEW_MAX = 6
-PREVIEW_WIDTH = 160
 
 DEFAULT_REJECTION_THRESHOLD = 30.0
 
@@ -55,11 +52,6 @@ class RgbMeanResult:
     processing_time_seconds: float
     background: np.ndarray
     previews: list[np.ndarray]
-
-
-def _thumbnail(frame: np.ndarray) -> np.ndarray:
-    height = max(1, round(frame.shape[0] * PREVIEW_WIDTH / frame.shape[1]))
-    return cv2.resize(frame, (PREVIEW_WIDTH, height), interpolation=cv2.INTER_AREA)
 
 
 def reject_outliers_and_mean(
@@ -125,7 +117,7 @@ def run_rgb_mean(
         every_n=every_n, max_frames=max_frames, resize=resize
     ):
         if len(frames) % preview_stride == 0 and len(previews) < PREVIEW_MAX:
-            previews.append(_thumbnail(frame))
+            previews.append(thumbnail(frame))
         frames.append(frame)
 
     if not frames:
