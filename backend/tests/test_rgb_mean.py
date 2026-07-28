@@ -50,29 +50,32 @@ def test_spread_every_n() -> None:
 
 def test_run_rgb_mean_all_frames(stored_video: dict) -> None:
     # All 20 frames, fill values 0,5,...,95 -> mean 47.5.
-    result = run_rgb_mean(rejection_threshold=KEEP_ALL)
+    result = run_rgb_mean(rejection_thresholds=[KEEP_ALL])
     assert result.use_all_frames is True
     assert result.target_frames is None
     assert result.every_n == 1
     assert result.sampled_frames == 20
-    assert result.rejected_fraction == 0.0
-    assert result.fallback_pixels == 0
-    assert float(result.background.mean()) == pytest.approx(47.5, abs=2.0)
+    assert len(result.variants) == 1
+    variant = result.variants[0]
+    assert variant.rejected_fraction == 0.0
+    assert variant.fallback_pixels == 0
+    assert float(variant.background.mean()) == pytest.approx(47.5, abs=2.0)
 
 
 def test_run_rgb_mean_computes_mean(stored_video: dict) -> None:
     # 20 frames, target 5 -> every_n=4 -> samples frames 0,4,8,12,16
     # (fill values 0,20,40,60,80 -> mean 40).
     result = run_rgb_mean(
-        target_frames=5, use_all_frames=False, rejection_threshold=KEEP_ALL
+        target_frames=5, use_all_frames=False, rejection_thresholds=[KEEP_ALL]
     )
     assert result.use_all_frames is False
     assert result.target_frames == 5
     assert result.every_n == 4
     assert result.sampled_frames == 5
-    assert result.background.shape == (HEIGHT, WIDTH, 3)
-    assert result.background.dtype == np.uint8
-    assert float(result.background.mean()) == pytest.approx(40.0, abs=2.0)
+    background = result.variants[0].background
+    assert background.shape == (HEIGHT, WIDTH, 3)
+    assert background.dtype == np.uint8
+    assert float(background.mean()) == pytest.approx(40.0, abs=2.0)
     assert result.processing_time_seconds > 0
     assert 1 <= len(result.previews) <= 5
     assert all(p.shape[1] == 160 for p in result.previews)
@@ -84,20 +87,62 @@ def test_run_rgb_mean_rejects_outliers(stored_video: dict) -> None:
     # symmetric around 47.5 -> mean still 47.5). The nearest rejected
     # value (25) is ~4.7 distance units past the cut, comfortably more
     # than MJPG compression noise can shift it.
-    result = run_rgb_mean(rejection_threshold=35.0)
-    assert result.rejection_threshold == 35.0
-    assert result.rejected_fraction == pytest.approx(0.6, abs=0.05)
-    assert float(result.background.mean()) == pytest.approx(47.5, abs=2.0)
+    result = run_rgb_mean(rejection_thresholds=[35.0])
+    variant = result.variants[0]
+    assert variant.rejection_threshold == 35.0
+    assert variant.rejected_fraction == pytest.approx(0.6, abs=0.05)
+    assert float(variant.background.mean()) == pytest.approx(47.5, abs=2.0)
+
+
+def test_run_rgb_mean_sweeps_thresholds_in_order(stored_video: dict) -> None:
+    # One decode pass, one variant per threshold, request order preserved.
+    # Fill values 0,5,...,95 around median 47.5: threshold 35 keeps 8 of 20
+    # samples, threshold 60 keeps 14, KEEP_ALL keeps everything. A wider
+    # threshold always keeps a superset, so the rejected share must fall.
+    result = run_rgb_mean(rejection_thresholds=[35.0, 60.0, KEEP_ALL])
+    assert [v.rejection_threshold for v in result.variants] == [35.0, 60.0, KEEP_ALL]
+    fractions = [v.rejected_fraction for v in result.variants]
+    assert fractions == pytest.approx([0.6, 0.3, 0.0], abs=0.05)
+    assert result.sampled_frames == 20  # shared by every variant
+    # Each variant owns its buffer rather than aliasing one shared image.
+    assert len({id(v.background) for v in result.variants}) == 3
+
+
+def test_run_rgb_mean_sweep_matches_individual_runs(stored_video: dict) -> None:
+    # A swept variant must be identical to the same threshold run alone —
+    # sharing the median and distance matrix must not change the result.
+    thresholds = [35.0, 60.0, KEEP_ALL]
+    swept = run_rgb_mean(rejection_thresholds=thresholds)
+    for threshold, variant in zip(thresholds, swept.variants, strict=True):
+        alone = run_rgb_mean(rejection_thresholds=[threshold]).variants[0]
+        assert np.array_equal(variant.background, alone.background)
+        assert variant.rejected_fraction == alone.rejected_fraction
+        assert variant.fallback_pixels == alone.fallback_pixels
 
 
 def test_run_rgb_mean_with_resize(stored_video: dict) -> None:
     result = run_rgb_mean(target_frames=5, resize=(32, 16), use_all_frames=False)
-    assert result.background.shape == (16, 32, 3)
+    assert all(v.background.shape == (16, 32, 3) for v in result.variants)
+
+
+def test_run_rgb_mean_defaults_to_preset_sweep(stored_video: dict) -> None:
+    result = run_rgb_mean()
+    assert [v.rejection_threshold for v in result.variants] == [20.0, 30.0, 50.0]
 
 
 def test_run_rgb_mean_rejects_negative_threshold(stored_video: dict) -> None:
     with pytest.raises(ValueError):
-        run_rgb_mean(rejection_threshold=-1.0)
+        run_rgb_mean(rejection_thresholds=[30.0, -1.0])
+
+
+def test_run_rgb_mean_rejects_empty_thresholds(stored_video: dict) -> None:
+    with pytest.raises(ValueError):
+        run_rgb_mean(rejection_thresholds=[])
+
+
+def test_run_rgb_mean_rejects_too_many_thresholds(stored_video: dict) -> None:
+    with pytest.raises(ValueError):
+        run_rgb_mean(rejection_thresholds=[float(i) for i in range(20)])
 
 
 def test_run_rgb_mean_without_video(empty_store: None) -> None:
@@ -111,7 +156,7 @@ def test_reject_outliers_and_mean_removes_foreground_pass() -> None:
     stack = np.full((20, 4, 6, 3), 10, dtype=np.uint8)
     stack[5] = 200
     stack[11] = 200
-    background, rejected, fallback = reject_outliers_and_mean(stack, 30.0)
+    [(background, rejected, fallback)] = reject_outliers_and_mean(stack, [30.0])
     assert np.array_equal(background, np.full((4, 6, 3), 10, dtype=np.uint8))
     assert rejected == 2 * 4 * 6
     assert fallback == 0
@@ -122,7 +167,7 @@ def test_reject_outliers_and_mean_median_fallback() -> None:
     # samples, so everything is rejected and the median is used instead.
     stack = np.zeros((2, 2, 2, 3), dtype=np.uint8)
     stack[1] = 255
-    background, rejected, fallback = reject_outliers_and_mean(stack, 100.0)
+    [(background, rejected, fallback)] = reject_outliers_and_mean(stack, [100.0])
     assert np.array_equal(background, np.full((2, 2, 3), 128, dtype=np.uint8))
     assert rejected == 2 * 2 * 2
     assert fallback == 2 * 2
@@ -132,16 +177,43 @@ def test_reject_outliers_and_mean_ignores_mild_noise() -> None:
     # Samples within the threshold are all kept and averaged.
     stack = np.zeros((4, 1, 1, 3), dtype=np.uint8)
     stack[:, 0, 0] = [[100] * 3, [102] * 3, [104] * 3, [106] * 3]
-    background, rejected, fallback = reject_outliers_and_mean(stack, 30.0)
+    [(background, rejected, fallback)] = reject_outliers_and_mean(stack, [30.0])
     assert background[0, 0].tolist() == [103, 103, 103]
     assert rejected == 0
     assert fallback == 0
 
 
+def test_reject_outliers_and_mean_multiple_thresholds() -> None:
+    # One pixel per outcome, evaluated in a single pass: a tight threshold
+    # rejects the 200s (background 10, one fallback pixel where the median
+    # sits between the two modes) while a wide one keeps everything.
+    stack = np.full((4, 1, 2, 3), 10, dtype=np.uint8)
+    stack[3, 0, 0] = 200  # minority outlier
+    stack[2:, 0, 1] = 200  # bimodal: median 105 matches no sample
+    outcomes = reject_outliers_and_mean(stack, [30.0, 500.0])
+    assert len(outcomes) == 2
+
+    tight, wide = outcomes
+    assert tight[0][0, 0].tolist() == [10, 10, 10]  # outlier dropped
+    assert tight[0][0, 1].tolist() == [105, 105, 105]  # median fallback
+    assert tight[1] == 1 + 4  # 1 outlier sample + all 4 of the bimodal pixel
+    assert tight[2] == 1
+
+    # sqrt(3) * 190 ~= 329 < 500, so nothing is rejected anywhere.
+    assert wide[0][0, 0].tolist() == [58, 58, 58]  # (10*3 + 200) / 4
+    assert wide[0][0, 1].tolist() == [105, 105, 105]
+    assert wide[1] == 0
+    assert wide[2] == 0
+
+
 def test_endpoint_returns_result(stored_video: dict) -> None:
     response = client.post(
         "/api/experiments/rgb-mean",
-        json={"target_frames": 5, "use_all_frames": False, "rejection_threshold": 500},
+        json={
+            "target_frames": 5,
+            "use_all_frames": False,
+            "rejection_thresholds": [500],
+        },
     )
     assert response.status_code == 200
     body = response.json()
@@ -150,18 +222,39 @@ def test_endpoint_returns_result(stored_video: dict) -> None:
     assert body["every_n"] == 4
     assert body["sampled_frames"] == 5
     assert body["resize"] is None
-    assert body["rejection_threshold"] == 500
-    assert body["rejected_fraction"] == 0.0
-    assert body["fallback_pixels"] == 0
     assert "median" in body["method"]
     assert body["processing_time_seconds"] > 0
+    # Run-level fields are reported once, not per variant.
+    assert "background" not in body
+    assert "rejection_threshold" not in body
 
-    background = decode_data_url(body["background"])
+    assert len(body["variants"]) == 1
+    variant = body["variants"][0]
+    assert variant["rejection_threshold"] == 500
+    assert variant["rejected_fraction"] == 0.0
+    assert variant["fallback_pixels"] == 0
+
+    background = decode_data_url(variant["background"])
     assert background.shape == (HEIGHT, WIDTH, 3)
     assert float(background.mean()) == pytest.approx(40.0, abs=2.0)
 
     assert len(body["previews"]) >= 1
     assert decode_data_url(body["previews"][0]).shape[1] == 160
+
+
+def test_endpoint_returns_one_variant_per_threshold(stored_video: dict) -> None:
+    # Three thresholds, one shared run: previews and timing are reported
+    # once, and each variant carries its own decodable background.
+    response = client.post(
+        "/api/experiments/rgb-mean",
+        json={"rejection_thresholds": [35, 60, 500]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert [v["rejection_threshold"] for v in body["variants"]] == [35, 60, 500]
+    assert body["sampled_frames"] == 20
+    for variant in body["variants"]:
+        assert decode_data_url(variant["background"]).shape == (HEIGHT, WIDTH, 3)
 
 
 def test_endpoint_defaults_to_all_frames(stored_video: dict) -> None:
@@ -172,7 +265,7 @@ def test_endpoint_defaults_to_all_frames(stored_video: dict) -> None:
     assert body["target_frames"] is None
     assert body["every_n"] == 1
     assert body["sampled_frames"] == 20
-    assert body["rejection_threshold"] == 30.0
+    assert [v["rejection_threshold"] for v in body["variants"]] == [20.0, 30.0, 50.0]
 
 
 def test_endpoint_without_video_returns_404(empty_store: None) -> None:
@@ -187,7 +280,9 @@ def test_endpoint_without_video_returns_404(empty_store: None) -> None:
         {"target_frames": -3},
         {"resize": [0, 16]},
         {"resize": [32, -1]},
-        {"rejection_threshold": -5},
+        {"rejection_thresholds": [30, -5]},
+        {"rejection_thresholds": []},
+        {"rejection_thresholds": [10, 20, 30, 40, 50, 60]},
     ],
 )
 def test_endpoint_invalid_parameters(stored_video: dict, body: dict) -> None:

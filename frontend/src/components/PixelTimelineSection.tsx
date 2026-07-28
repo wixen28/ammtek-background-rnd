@@ -12,6 +12,9 @@ interface PixelTimelineSectionProps {
   experimentName: string
   // Filename for the background download link.
   downloadName: string
+  // Optional controls rendered directly above the background image, for
+  // experiments that produce more than one background per run.
+  backgroundToolbar?: React.ReactNode
 }
 
 function PixelTimelineSection({
@@ -19,6 +22,7 @@ function PixelTimelineSection({
   background,
   experimentName,
   downloadName,
+  backgroundToolbar,
 }: PixelTimelineSectionProps) {
   const [pixelX, setPixelX] = useState('')
   const [pixelY, setPixelY] = useState('')
@@ -190,6 +194,7 @@ function PixelTimelineSection({
             <p className="content-hint">
               Click to select a pixel, or click and drag to scrub.
             </p>
+            {backgroundToolbar}
             <div className="pixel-select-wrap">
               <img
                 className="background-image background-image-clickable"

@@ -39,7 +39,16 @@ export interface RgbMeanParams {
   use_all_frames: boolean
   target_frames: number
   resize: [number, number] | null
+  // One background is generated per threshold, from a single decode pass.
+  rejection_thresholds: number[]
+}
+
+// One threshold's background and diagnostics; the rest of the run is shared.
+export interface RgbMeanVariant {
   rejection_threshold: number
+  rejected_fraction: number
+  fallback_pixels: number
+  background: string
 }
 
 export interface RgbMeanResult {
@@ -48,13 +57,12 @@ export interface RgbMeanResult {
   every_n: number
   sampled_frames: number
   resize: [number, number] | null
-  rejection_threshold: number
-  rejected_fraction: number
-  fallback_pixels: number
   method: string
+  // Whole run, all thresholds together.
   processing_time_seconds: number
-  background: string
   previews: string[]
+  // In the same order as the requested thresholds.
+  variants: RgbMeanVariant[]
 }
 
 export async function runRgbMean(params: RgbMeanParams): Promise<RgbMeanResult> {

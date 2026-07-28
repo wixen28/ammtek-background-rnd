@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, PositiveInt
@@ -15,8 +16,11 @@ class RgbMeanRequest(BaseModel):
     use_all_frames: bool = True
     target_frames: int = Field(default=30, ge=1)
     resize: tuple[PositiveInt, PositiveInt] | None = None
-    rejection_threshold: float = Field(
-        default=rgb_mean.DEFAULT_REJECTION_THRESHOLD, ge=0
+    # One background is produced per threshold, from a single decode pass.
+    rejection_thresholds: list[Annotated[float, Field(ge=0)]] = Field(
+        default=list(rgb_mean.DEFAULT_REJECTION_THRESHOLDS),
+        min_length=1,
+        max_length=rgb_mean.MAX_REJECTION_THRESHOLDS,
     )
 
 
@@ -27,7 +31,7 @@ def run_rgb_mean_experiment(request: RgbMeanRequest) -> dict:
             target_frames=request.target_frames,
             resize=request.resize,
             use_all_frames=request.use_all_frames,
-            rejection_threshold=request.rejection_threshold,
+            rejection_thresholds=request.rejection_thresholds,
         )
     except NoCurrentVideoError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -40,13 +44,18 @@ def run_rgb_mean_experiment(request: RgbMeanRequest) -> dict:
         "every_n": result.every_n,
         "sampled_frames": result.sampled_frames,
         "resize": result.resize,
-        "rejection_threshold": result.rejection_threshold,
-        "rejected_fraction": result.rejected_fraction,
-        "fallback_pixels": result.fallback_pixels,
         "method": rgb_mean.METHOD,
         "processing_time_seconds": result.processing_time_seconds,
-        "background": to_data_url(result.background, ".png"),
         "previews": [to_data_url(p, ".jpg") for p in result.previews],
+        "variants": [
+            {
+                "rejection_threshold": variant.rejection_threshold,
+                "rejected_fraction": variant.rejected_fraction,
+                "fallback_pixels": variant.fallback_pixels,
+                "background": to_data_url(variant.background, ".png"),
+            }
+            for variant in result.variants
+        ],
     }
 
 

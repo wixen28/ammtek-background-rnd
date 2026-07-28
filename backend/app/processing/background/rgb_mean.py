@@ -12,9 +12,16 @@ Unlike the previous running mean, the median needs every sample at once,
 so all sampled frames are stacked in memory (N × H × W × 3 uint8). The
 rejection pass then runs in row bands to keep the float32 temporaries
 bounded regardless of resolution.
+
+Several thresholds are evaluated in a single run. The float32 cast, the
+temporal median and the distance matrix do not depend on the threshold,
+so each band computes them once and only the keep-mask and the masked
+mean are repeated per threshold — far cheaper than re-running the whole
+experiment (which would also re-decode the video) once per threshold.
 """
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -27,7 +34,11 @@ from app.processing.video.sampling import (
     spread_every_n,
 )
 
-DEFAULT_REJECTION_THRESHOLD = 30.0
+# Presets swept by default; the frontend sends its own (editable) values.
+DEFAULT_REJECTION_THRESHOLDS = (20.0, 30.0, 50.0)
+
+# Every threshold adds a full-resolution PNG to the response payload.
+MAX_REJECTION_THRESHOLDS = 5
 
 METHOD = (
     "Per-pixel mean of samples within a Euclidean RGB distance threshold of "
@@ -40,60 +51,84 @@ _BAND_FLOAT_BUDGET = 64 * 1024 * 1024
 
 
 @dataclass
+class RgbMeanVariant:
+    """One threshold's background and its diagnostics."""
+
+    rejection_threshold: float
+    rejected_fraction: float  # share of all pixel samples rejected
+    fallback_pixels: int  # pixels where every sample was rejected
+    background: np.ndarray
+
+
+@dataclass
 class RgbMeanResult:
     use_all_frames: bool
     target_frames: int | None  # None in all-frames mode
     every_n: int
     sampled_frames: int
     resize: tuple[int, int] | None
-    rejection_threshold: float
-    rejected_fraction: float  # share of all pixel samples rejected
-    fallback_pixels: int  # pixels where every sample was rejected
-    processing_time_seconds: float
-    background: np.ndarray
+    processing_time_seconds: float  # whole run, all thresholds together
     previews: list[np.ndarray]
+    variants: list[RgbMeanVariant]
 
 
 def reject_outliers_and_mean(
-    stack: np.ndarray, threshold: float
-) -> tuple[np.ndarray, int, int]:
-    """Mean of per-pixel samples within ``threshold`` of the temporal median.
+    stack: np.ndarray, thresholds: Sequence[float]
+) -> list[tuple[np.ndarray, int, int]]:
+    """One background per threshold, from a single pass over the stack.
 
-    ``stack`` is (frames, height, width, channels) uint8. Returns the
-    background image plus the number of rejected samples and of fallback
-    pixels (all samples rejected — the median vector need not coincide with
-    any actual sample, so this can happen for e.g. bimodal pixels).
+    Each background is the per-pixel mean of the samples lying within that
+    threshold of the temporal median.
+
+    ``stack`` is (frames, height, width, channels) uint8. Returns one
+    (background, rejected samples, fallback pixels) triple per threshold,
+    in the given order. Fallback pixels are those where every sample was
+    rejected — the median vector need not coincide with any actual sample,
+    so this can happen for e.g. bimodal pixels.
+
+    The per-band median and distance matrix are shared by all thresholds,
+    so additional thresholds cost only a mask and a masked mean each.
     """
     frames, height, width, channels = stack.shape
-    background = np.empty((height, width, channels), dtype=np.uint8)
-    rejected = 0
-    fallback = 0
+    backgrounds = [
+        np.empty((height, width, channels), dtype=np.uint8) for _ in thresholds
+    ]
+    rejected = [0] * len(thresholds)
+    fallback = [0] * len(thresholds)
 
     band = max(1, _BAND_FLOAT_BUDGET // (frames * width * channels * 4))
     for y0 in range(0, height, band):
         chunk = stack[:, y0 : y0 + band].astype(np.float32)
         median = np.median(chunk, axis=0)
         distance_sq = ((chunk - median) ** 2).sum(axis=3)
-        keep = distance_sq <= threshold * threshold
-        counts = keep.sum(axis=0)
-        sums = (chunk * keep[..., np.newaxis]).sum(axis=0)
-        mean = sums / np.maximum(counts, 1)[..., np.newaxis]
-        resolved = np.where((counts == 0)[..., np.newaxis], median, mean)
-        background[y0 : y0 + band] = resolved.round().astype(np.uint8)
-        rejected += int(counts.size * frames - counts.sum())
-        fallback += int((counts == 0).sum())
+        for i, threshold in enumerate(thresholds):
+            keep = distance_sq <= threshold * threshold
+            counts = keep.sum(axis=0)
+            sums = (chunk * keep[..., np.newaxis]).sum(axis=0)
+            mean = sums / np.maximum(counts, 1)[..., np.newaxis]
+            resolved = np.where((counts == 0)[..., np.newaxis], median, mean)
+            backgrounds[i][y0 : y0 + band] = resolved.round().astype(np.uint8)
+            rejected[i] += int(counts.size * frames - counts.sum())
+            fallback[i] += int((counts == 0).sum())
 
-    return background, rejected, fallback
+    return list(zip(backgrounds, rejected, fallback, strict=True))
 
 
 def run_rgb_mean(
     target_frames: int = 30,
     resize: tuple[int, int] | None = None,
     use_all_frames: bool = True,
-    rejection_threshold: float = DEFAULT_REJECTION_THRESHOLD,
+    rejection_thresholds: Sequence[float] = DEFAULT_REJECTION_THRESHOLDS,
 ) -> RgbMeanResult:
-    if rejection_threshold < 0:
-        raise ValueError("rejection_threshold must be non-negative.")
+    if not rejection_thresholds:
+        raise ValueError("At least one rejection threshold is required.")
+    if len(rejection_thresholds) > MAX_REJECTION_THRESHOLDS:
+        raise ValueError(
+            f"At most {MAX_REJECTION_THRESHOLDS} rejection thresholds "
+            "can be evaluated in one run."
+        )
+    if any(threshold < 0 for threshold in rejection_thresholds):
+        raise ValueError("rejection_thresholds must be non-negative.")
 
     record = store.load_current()
     if record is None:
@@ -125,9 +160,7 @@ def run_rgb_mean(
 
     stack = np.stack(frames)
     frames.clear()
-    background, rejected, fallback = reject_outliers_and_mean(
-        stack, rejection_threshold
-    )
+    outcomes = reject_outliers_and_mean(stack, rejection_thresholds)
     count = stack.shape[0]
     samples_total = count * stack.shape[1] * stack.shape[2]
     elapsed = time.perf_counter() - start
@@ -138,10 +171,17 @@ def run_rgb_mean(
         every_n=every_n,
         sampled_frames=count,
         resize=resize,
-        rejection_threshold=rejection_threshold,
-        rejected_fraction=rejected / samples_total,
-        fallback_pixels=fallback,
         processing_time_seconds=elapsed,
-        background=background,
         previews=previews,
+        variants=[
+            RgbMeanVariant(
+                rejection_threshold=threshold,
+                rejected_fraction=rejected / samples_total,
+                fallback_pixels=fallback,
+                background=background,
+            )
+            for threshold, (background, rejected, fallback) in zip(
+                rejection_thresholds, outcomes, strict=True
+            )
+        ],
     )
