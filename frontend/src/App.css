@@ -342,6 +342,183 @@ button.nav-item:hover {
   color: #52514e;
 }
 
+.movement-section {
+  margin-top: 2rem;
+}
+
+.movement-section h3 {
+  margin-bottom: 0.5rem;
+}
+
+.movement-section .experiment-controls input[type='range'] {
+  width: 14rem;
+}
+
+/* Labelled key/value row: easier to scan than one run-on sentence. */
+.movement-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid #e1e0d9;
+  border-radius: 6px;
+}
+
+.movement-summary dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #898781;
+  margin-bottom: 0.15rem;
+}
+
+.movement-summary dd {
+  margin: 0;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.movement-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem 1.25rem;
+  margin-top: 1rem;
+}
+
+.movement-view {
+  margin: 0;
+}
+
+/* The whole thumbnail is the enlarge control, so it must be focusable. */
+.movement-view-media {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid #e1e0d9;
+  border-radius: 4px;
+  background: none;
+  line-height: 0;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.movement-view-media:hover {
+  border-color: #1c5cab;
+}
+
+.movement-view figcaption {
+  margin-top: 0.4rem;
+}
+
+.movement-view-title {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #1f2328;
+}
+
+.movement-view-description {
+  display: block;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: #6b7280;
+}
+
+.movement-view img,
+.movement-view canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background-color: #f5f4ef;
+}
+
+/* Lightbox: the compact grid stays the overview, this is where details are
+   actually inspected. Closes on the backdrop, the button and Escape. */
+.movement-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background-color: rgba(20, 22, 26, 0.75);
+}
+
+.movement-modal-panel {
+  display: flex;
+  flex-direction: column;
+  max-width: min(1400px, 96vw);
+  max-height: 92vh;
+  padding: 1rem 1.25rem 1.25rem;
+  border-radius: 8px;
+  background-color: #ffffff;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.movement-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+.movement-modal-header h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.movement-modal-close {
+  padding: 0 0.4rem;
+  border: 1px solid #e1e0d9;
+  border-radius: 4px;
+  background-color: #ffffff;
+  color: #52514e;
+  font-size: 1.25rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.movement-modal-close:hover {
+  background-color: #f5f4ef;
+}
+
+.movement-modal-media {
+  min-height: 0;
+  overflow: auto;
+}
+
+.movement-modal-media img,
+.movement-modal-media canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 76vh;
+  width: auto;
+  height: auto;
+  margin: 0 auto;
+  background-color: #f5f4ef;
+}
+
+.movement-modal-description {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+/* Checkerboard so transparent background pixels are visible in the
+   foreground-only view. */
+.movement-view canvas.movement-transparent,
+.movement-modal-media canvas.movement-transparent {
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(45deg, #e1e0d9 25%, transparent 25%, transparent 75%, #e1e0d9 75%),
+    linear-gradient(45deg, #e1e0d9 25%, transparent 25%, transparent 75%, #e1e0d9 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+
 .chart {
   width: 100%;
   margin-top: 0.4rem;

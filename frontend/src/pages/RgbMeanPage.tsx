@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { runRgbMean, type RgbMeanResult, type VideoRecord } from '../api'
+import MovementVisualizationSection from '../components/MovementVisualizationSection'
 import PixelTimelineSection from '../components/PixelTimelineSection'
 
 interface RgbMeanPageProps {
@@ -234,6 +235,17 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
               ))}
             </div>
           )
+        }
+      />
+
+      <MovementVisualizationSection
+        currentVideo={currentVideo}
+        backgroundSrc={selectedVariant?.background ?? null}
+        experimentName="RGB Mean"
+        backgroundLabel={
+          selectedVariant
+            ? `${PRESET_LABELS[selected] ?? 'threshold'} · outlier threshold ${selectedVariant.rejection_threshold}`
+            : undefined
         }
       />
     </>

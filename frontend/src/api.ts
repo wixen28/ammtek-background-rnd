@@ -131,6 +131,32 @@ export async function getPixelTimeline(
   return res.json()
 }
 
+// One frame of the current video, for client-side diagnostics. Method
+// independent: it knows nothing about how any background was generated.
+export interface VideoFrame {
+  frame_index: number
+  frame_count: number
+  width: number
+  height: number
+  source_width: number
+  source_height: number
+  frame: string
+}
+
+export async function getVideoFrame(
+  frameIndex: number,
+  maxWidth?: number,
+): Promise<VideoFrame> {
+  const params = new URLSearchParams({ frame_index: String(frameIndex) })
+  if (maxWidth !== undefined) params.set('max_width', String(maxWidth))
+
+  const res = await fetch(
+    `${API_BASE_URL}/api/videos/current/frame?${params.toString()}`,
+  )
+  if (!res.ok) throw new Error(await errorDetail(res))
+  return res.json()
+}
+
 export async function getCurrentVideo(): Promise<VideoRecord | null> {
   const res = await fetch(`${API_BASE_URL}/api/videos/current`)
   if (res.status === 404) return null

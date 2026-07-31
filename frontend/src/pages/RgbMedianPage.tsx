@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { runRgbMedian, type RgbMedianResult, type VideoRecord } from '../api'
+import MovementVisualizationSection from '../components/MovementVisualizationSection'
 import PixelTimelineSection from '../components/PixelTimelineSection'
 
 interface RgbMedianPageProps {
@@ -150,6 +151,12 @@ function RgbMedianPage({ currentVideo }: RgbMedianPageProps) {
         background={result?.background ?? null}
         experimentName="RGB Median"
         downloadName="rgb-median-background.png"
+      />
+
+      <MovementVisualizationSection
+        currentVideo={currentVideo}
+        backgroundSrc={result?.background ?? null}
+        experimentName="RGB Median"
       />
     </>
   )

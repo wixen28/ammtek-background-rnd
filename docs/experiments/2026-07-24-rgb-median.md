@@ -75,6 +75,9 @@ instead of copying it.
 - **Pixel timeline**: the shared analysis section (same as on the RGB Mean
   page) is available here too — pixels are selected on the median
   background, and the timeline is read from the original video.
+- **Background vs moving pixels**: the same shared section as on the RGB
+  Mean page (see `2026-07-28-movement-visualization.md`), here comparing a
+  selected frame against the median background.
 
 ## Open questions
 
