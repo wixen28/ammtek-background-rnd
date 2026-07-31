@@ -504,6 +504,21 @@ button.nav-item:hover {
   background-color: #f5f4ef;
 }
 
+/* Playback lives only here, inside the enlarged view — the grid and its
+   scrubber are unchanged. */
+.movement-modal-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.movement-modal-frame {
+  font-size: 0.85rem;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
 .movement-modal-description {
   margin: 0.75rem 0 0;
   font-size: 0.85rem;

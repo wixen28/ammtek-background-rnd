@@ -73,6 +73,59 @@ experiment ran at full resolution the served frame is byte-identical to the
 decoded source frame, and when it ran with `resize` both images have passed
 through the same `INTER_AREA` downscale.
 
+## Playback in the enlarged view (2026-07-31)
+
+Each enlarged view has Play/Pause. The selected view is regenerated frame by
+frame from the same computation as the static case — no separate animation
+path. The grid and its scrubber are unchanged, and playback is offered only
+inside the modal. Closing it (backdrop, close button, Escape, or the
+background going away) stops playback; so does a failed frame read, since
+`frame_count` comes from container metadata and can overshoot the real end of
+the video.
+
+### Self-clocking, no timer
+
+The playhead advances only once the requested frame has arrived **and been
+decoded** (`renderedIndex === frameIndex`). Consequences: exactly one request
+is ever in flight, the playhead cannot run ahead of what is on screen, and no
+frame is superseded mid-decode and therefore skipped. There is no timer
+advancing the frame independently of loading, so playback simply runs at
+whatever rate frames come back.
+
+### The throttle applies to scrubbing only
+
+The 250 ms trailing throttle exists because a scrubber drag can emit dozens
+of positions a second. Playback cannot spam — it is already limited to one
+request in flight — so it calls the fetch directly. While the throttle was in
+the playback path the period was `max(250 ms, frame time)`, i.e. a hard 4 fps
+ceiling with idle time on every frame. Scrubbing still goes through the
+throttle unchanged.
+
+### Measured per-frame backend cost
+
+Sequential frames, `read_frame_at` + resize + PNG + base64, one request's
+worth of work (2026-07-31, this machine):
+
+| Source | Requested grid | Per frame | Backend-only ceiling | Payload |
+| --- | --- | --- | --- | --- |
+| tokyo-2.mp4 1920×1080 | 640×360 | 136 ms | 7.4 fps | 607 KB |
+| tokyo-2.mp4 1920×1080 | 1920×1080 | 164 ms | 6.1 fps | 4639 KB |
+| bus-stop.mp4 1920×1080 | 640×360 | 140 ms | 7.2 fps | 551 KB |
+| football 640×360 | 640×360 | 25 ms | 39.6 fps | 348 KB |
+| easy_people… 596×336 | 596×336 | 31 ms | 32.0 fps | 401 KB |
+
+Broken down for tokyo-2 at 640×360: **open + seek + decode 124 ms**, resize
+0.5 ms, PNG + base64 6 ms.
+
+The decode dominates and **does not depend on the requested width** — the
+frame is decoded at source resolution before being downscaled. So running the
+experiment with `resize` cuts the payload (4.6 MB → 607 KB) and the browser's
+per-frame work, but leaves an HD source at a ~7 fps backend ceiling. Only a
+natively small source reaches fluid rates. The remaining cost is the
+`VideoCapture` open plus keyframe-relative seek that `frames.py` performs per
+request, which is pure waste for sequential access; removing it needs a
+sequential batch endpoint or a persistent decoder, both deferred.
+
 ## Scope
 
 Diagnostic **pixel separation** only. There is no object detection, no
