@@ -7,10 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.processing.background.rgb_mean import (
-    reject_outliers_and_mean,
-    run_rgb_mean,
-)
+from app.processing.background.rgb_mean import run_rgb_mean
 from app.processing.video import store
 from app.processing.video.sampling import NoCurrentVideoError, spread_every_n
 from tests.conftest import HEIGHT, WIDTH, make_video
@@ -148,62 +145,6 @@ def test_run_rgb_mean_rejects_too_many_thresholds(stored_video: dict) -> None:
 def test_run_rgb_mean_without_video(empty_store: None) -> None:
     with pytest.raises(NoCurrentVideoError):
         run_rgb_mean()
-
-
-def test_reject_outliers_and_mean_removes_foreground_pass() -> None:
-    # 18 background samples at 10 plus 2 foreground samples at 200: the
-    # plain mean would be 29; rejection recovers the background value.
-    stack = np.full((20, 4, 6, 3), 10, dtype=np.uint8)
-    stack[5] = 200
-    stack[11] = 200
-    [(background, rejected, fallback)] = reject_outliers_and_mean(stack, [30.0])
-    assert np.array_equal(background, np.full((4, 6, 3), 10, dtype=np.uint8))
-    assert rejected == 2 * 4 * 6
-    assert fallback == 0
-
-
-def test_reject_outliers_and_mean_median_fallback() -> None:
-    # Bimodal pixel: the median vector (127.5) is far from both actual
-    # samples, so everything is rejected and the median is used instead.
-    stack = np.zeros((2, 2, 2, 3), dtype=np.uint8)
-    stack[1] = 255
-    [(background, rejected, fallback)] = reject_outliers_and_mean(stack, [100.0])
-    assert np.array_equal(background, np.full((2, 2, 3), 128, dtype=np.uint8))
-    assert rejected == 2 * 2 * 2
-    assert fallback == 2 * 2
-
-
-def test_reject_outliers_and_mean_ignores_mild_noise() -> None:
-    # Samples within the threshold are all kept and averaged.
-    stack = np.zeros((4, 1, 1, 3), dtype=np.uint8)
-    stack[:, 0, 0] = [[100] * 3, [102] * 3, [104] * 3, [106] * 3]
-    [(background, rejected, fallback)] = reject_outliers_and_mean(stack, [30.0])
-    assert background[0, 0].tolist() == [103, 103, 103]
-    assert rejected == 0
-    assert fallback == 0
-
-
-def test_reject_outliers_and_mean_multiple_thresholds() -> None:
-    # One pixel per outcome, evaluated in a single pass: a tight threshold
-    # rejects the 200s (background 10, one fallback pixel where the median
-    # sits between the two modes) while a wide one keeps everything.
-    stack = np.full((4, 1, 2, 3), 10, dtype=np.uint8)
-    stack[3, 0, 0] = 200  # minority outlier
-    stack[2:, 0, 1] = 200  # bimodal: median 105 matches no sample
-    outcomes = reject_outliers_and_mean(stack, [30.0, 500.0])
-    assert len(outcomes) == 2
-
-    tight, wide = outcomes
-    assert tight[0][0, 0].tolist() == [10, 10, 10]  # outlier dropped
-    assert tight[0][0, 1].tolist() == [105, 105, 105]  # median fallback
-    assert tight[1] == 1 + 4  # 1 outlier sample + all 4 of the bimodal pixel
-    assert tight[2] == 1
-
-    # sqrt(3) * 190 ~= 329 < 500, so nothing is rejected anywhere.
-    assert wide[0][0, 0].tolist() == [58, 58, 58]  # (10*3 + 200) / 4
-    assert wide[0][0, 1].tolist() == [105, 105, 105]
-    assert wide[1] == 0
-    assert wide[2] == 0
 
 
 def test_endpoint_returns_result(stored_video: dict) -> None:

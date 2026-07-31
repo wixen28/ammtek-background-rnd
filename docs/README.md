@@ -6,7 +6,8 @@ Notes for the ammtek background-extraction proof of concept.
 
 Compare methods of extracting a static background from video and generating
 a foreground mask. Implemented so far: RGB mean with outlier rejection, RGB
-median over sampled frames. Candidate directions (not yet implemented):
+median over sampled frames, and background variation (how much variation
+survives outlier rejection). Candidate directions (not yet implemented):
 depth-estimation-based separation, object-detection (e.g. YOLO) assisted
 masking.
 

@@ -355,7 +355,8 @@ button.nav-item:hover {
 }
 
 /* Labelled key/value row: easier to scan than one run-on sentence. */
-.movement-summary {
+.movement-summary,
+.variation-summary {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 2rem;
@@ -365,7 +366,8 @@ button.nav-item:hover {
   border-radius: 6px;
 }
 
-.movement-summary dt {
+.movement-summary dt,
+.variation-summary dt {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -373,7 +375,8 @@ button.nav-item:hover {
   margin-bottom: 0.15rem;
 }
 
-.movement-summary dd {
+.movement-summary dd,
+.variation-summary dd {
   margin: 0;
   font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
@@ -517,6 +520,46 @@ button.nav-item:hover {
     linear-gradient(45deg, #e1e0d9 25%, transparent 25%, transparent 75%, #e1e0d9 75%);
   background-size: 16px 16px;
   background-position: 0 0, 8px 8px;
+}
+
+/* Background next to its variation mask. Two panels only, and neither is a
+   control, so this is a plain figure grid rather than the movement one. */
+.variation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem 1.25rem;
+  margin: 1rem 0;
+}
+
+.variation-view {
+  margin: 0;
+}
+
+.variation-view img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid #e1e0d9;
+  border-radius: 4px;
+  background-color: #f5f4ef;
+}
+
+.variation-view figcaption {
+  margin-top: 0.4rem;
+}
+
+.variation-view-title {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #1f2328;
+}
+
+.variation-view-description {
+  display: block;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: #6b7280;
 }
 
 .chart {

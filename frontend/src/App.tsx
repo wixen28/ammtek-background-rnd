@@ -1,18 +1,25 @@
 import { useEffect, useState } from 'react'
 import { checkHealth, getCurrentVideo, type VideoRecord } from './api'
+import BackgroundVariationPage from './pages/BackgroundVariationPage'
 import RgbMeanPage from './pages/RgbMeanPage'
 import RgbMedianPage from './pages/RgbMedianPage'
 import VideoInputPage from './pages/VideoInputPage'
 import './App.css'
 
 type BackendStatus = 'checking' | 'online' | 'offline'
-type View = 'overview' | 'video-input' | 'rgb-mean' | 'rgb-median'
+type View =
+  | 'overview'
+  | 'video-input'
+  | 'rgb-mean'
+  | 'rgb-median'
+  | 'background-variation'
 
 const NAV_ITEMS: { view: View; label: string }[] = [
   { view: 'overview', label: 'Overview' },
   { view: 'video-input', label: 'Video Input' },
   { view: 'rgb-mean', label: 'RGB Mean' },
   { view: 'rgb-median', label: 'RGB Median' },
+  { view: 'background-variation', label: 'Background Variation' },
 ]
 
 function OverviewPage() {
@@ -91,6 +98,9 @@ function App() {
         )}
         {view === 'rgb-mean' && <RgbMeanPage currentVideo={currentVideo} />}
         {view === 'rgb-median' && <RgbMedianPage currentVideo={currentVideo} />}
+        {view === 'background-variation' && (
+          <BackgroundVariationPage currentVideo={currentVideo} />
+        )}
       </main>
     </div>
   )

@@ -105,6 +105,51 @@ export async function runRgbMedian(
   return res.json()
 }
 
+export interface BackgroundVariationParams {
+  use_all_frames: boolean
+  target_frames: number
+  resize: [number, number] | null
+  rejection_threshold: number
+}
+
+export interface BackgroundVariationResult {
+  use_all_frames: boolean
+  target_frames: number | null
+  every_n: number
+  sampled_frames: number
+  resize: [number, number] | null
+  method: string
+  processing_time_seconds: number
+  rejection_threshold: number
+  rejected_fraction: number
+  fallback_pixels: number
+  // Range over pixels that kept at least one sample, in RGB distance units.
+  // The mask is scaled from zero by deviation_max, so a gray value maps back
+  // as `deviation ~= gray / 255 * deviation_max`.
+  deviation_min: number
+  deviation_max: number
+  background: string
+  // Single-channel grayscale: black is a stable pixel, brighter is more
+  // variation surviving outlier rejection.
+  variation_mask: string
+  previews: string[]
+}
+
+export async function runBackgroundVariation(
+  params: BackgroundVariationParams,
+): Promise<BackgroundVariationResult> {
+  const res = await fetch(
+    `${API_BASE_URL}/api/experiments/background-variation`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    },
+  )
+  if (!res.ok) throw new Error(await errorDetail(res))
+  return res.json()
+}
+
 export interface PixelSample {
   frame_index: number
   timestamp_seconds: number
