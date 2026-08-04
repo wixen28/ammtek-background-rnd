@@ -188,15 +188,20 @@ export interface VideoFrame {
   frame: string
 }
 
+// `signal` lets the frame prefetcher abandon requests it no longer needs — a
+// seek or a closed view would otherwise leave several in flight, each holding
+// a backend threadpool slot doing a decode nobody will look at.
 export async function getVideoFrame(
   frameIndex: number,
   maxWidth?: number,
+  signal?: AbortSignal,
 ): Promise<VideoFrame> {
   const params = new URLSearchParams({ frame_index: String(frameIndex) })
   if (maxWidth !== undefined) params.set('max_width', String(maxWidth))
 
   const res = await fetch(
     `${API_BASE_URL}/api/videos/current/frame?${params.toString()}`,
+    { signal },
   )
   if (!res.ok) throw new Error(await errorDetail(res))
   return res.json()

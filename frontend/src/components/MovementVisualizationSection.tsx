@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getVideoFrame, type VideoFrame, type VideoRecord } from '../api'
+import { decodeImage, imageWidth, type Pixels } from '../imageData'
 import {
   computeMovementViews,
   DEFAULT_MOVEMENT_THRESHOLD,
   MAX_RGB_DISTANCE,
   type MovementViews,
 } from '../movement'
+import { useFramePlayback } from '../useFramePlayback'
 
 type ViewKey =
   | 'frame'
@@ -37,7 +39,7 @@ const VIEWS: { key: ViewKey; title: string; description: string }[] = [
     key: 'highlight',
     title: 'Moving pixels in colour',
     description:
-      'Background pixels are grayscale, moving pixels remain in colour.',
+      'Background pixels are dimmed to 20 % grayscale, moving pixels remain in colour.',
   },
   {
     key: 'mask',
@@ -63,74 +65,34 @@ interface MovementVisualizationSectionProps {
   backgroundLabel?: string
 }
 
-interface Pixels {
-  data: Uint8ClampedArray
-  width: number
-  height: number
-}
-
 // Matches the throttle used for pixel-timeline scrubbing.
 const THROTTLE_MS = 250
 
-// ---------------------------------------------------------------------------
-// TEMPORARY PROFILING — delete this block and its call sites once the
-// playback bottleneck is identified. Backend (18 ms/frame) and
-// computeMovementViews (5.7 ms at 960x540) have already been measured and
-// account for only ~24 ms of an observed ~5500 ms per frame, so this exists
-// to find the missing time in the browser-side steps.
-const PROFILE = true
-const prof = {
-  renders: 0,
-  issued: 0,
-  accepted: 0,
-  discarded: 0,
-  lastShownAt: 0,
-  fetchMs: 0,
-  decodeMs: 0,
-  computeMs: 0,
-  gapMs: 0,
-  cancelled: 0,
-}
-const plog = (msg: string) => {
-  if (PROFILE) console.log(`[prof] ${msg}`)
-}
-// ---------------------------------------------------------------------------
-
-/** Natural width of an image data URL, without decoding its pixels. */
-async function imageWidth(src: string): Promise<number> {
-  const image = new Image()
-  image.src = src
-  await image.decode()
-  return image.naturalWidth
-}
-
-/** Decode an image data URL to RGBA bytes, optionally rescaled. */
-async function decodeImage(
-  src: string,
-  width?: number,
-  height?: number,
-): Promise<Pixels> {
-  const image = new Image()
-  image.src = src
-  await image.decode()
-
-  const w = width ?? image.naturalWidth
-  const h = height ?? image.naturalHeight
-  const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
-  const context = canvas.getContext('2d', { willReadFrequently: true })
-  if (!context) throw new Error('Canvas 2D context is unavailable.')
-
-  context.drawImage(image, 0, 0, w, h)
-  return { data: context.getImageData(0, 0, w, h).data, width: w, height: h }
+/**
+ * Paint one view's bytes into a canvas. Shared by the state-driven path and by
+ * playback's imperative one, so both put pixels on screen identically.
+ *
+ * The backing store is resized only when the grid actually changes: assigning
+ * `width`/`height` reallocates and clears it, which is pointless work when the
+ * dimensions already match.
+ */
+function paintCanvas(
+  canvas: HTMLCanvasElement,
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+) {
+  if (canvas.width !== width) canvas.width = width
+  if (canvas.height !== height) canvas.height = height
+  canvas
+    .getContext('2d')
+    ?.putImageData(new ImageData(data, width, height), 0, 0)
 }
 
 /**
- * Paints one derived view. The grid panel and the enlarged modal render the
- * same component from the same pixel data, so both stay in sync when the
- * threshold or frame changes while the modal is open. The backing store is
- * always the full processing grid; CSS scales the element.
+ * Paints one derived view in the grid, from React state. The enlarged view uses
+ * a single canvas painted directly instead, so that playback can drive it
+ * without a render per frame.
  */
 function ViewCanvas({
   data,
@@ -147,12 +109,7 @@ function ViewCanvas({
 
   useEffect(() => {
     const canvas = ref.current
-    if (!canvas) return
-    canvas.width = width
-    canvas.height = height
-    canvas
-      .getContext('2d')
-      ?.putImageData(new ImageData(data, width, height), 0, 0)
+    if (canvas) paintCanvas(canvas, data, width, height)
   }, [data, width, height])
 
   return <canvas ref={ref} className={className} />
@@ -180,8 +137,6 @@ function MovementVisualizationSection({
   const [openView, setOpenView] = useState<ViewKey | null>(null)
   // Frame-by-frame playback, offered only inside the enlarged view.
   const [playing, setPlaying] = useState(false)
-  // TEMPORARY PROFILING readout, shown in the enlarged view.
-  const [profText, setProfText] = useState('')
 
   // Sequence guard: only the response to the most recently issued request
   // may update the UI, so a slow earlier response cannot overwrite a newer
@@ -190,47 +145,49 @@ function MovementVisualizationSection({
   const throttleTimerRef = useRef<number | null>(null)
   const pendingRef = useRef<{ index: number; maxWidth: number } | null>(null)
 
+  // --- The imperative playback path -----------------------------------------
+  // Playback paints without going through React, so everything it needs during
+  // a frame has to be reachable without a render. These mirror the state above.
+  const modalCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const backgroundPixelsRef = useRef<Pixels | null>(null)
+  const thresholdRef = useRef(threshold)
+  const openViewRef = useRef<ViewKey | null>(null)
+  // Latest displayed frame and its share of moving pixels, read during render.
+  const liveIndexRef = useRef(0)
+  const liveShareRef = useRef<number | null>(null)
+  // The last frame playback painted, handed to React state when it stops.
+  const lastAdvancedRef = useRef<{
+    index: number
+    pixels: Pixels
+    views: MovementViews
+  } | null>(null)
+
+  useEffect(() => {
+    backgroundPixelsRef.current = backgroundPixels
+  }, [backgroundPixels])
+  useEffect(() => {
+    thresholdRef.current = threshold
+  }, [threshold])
+  useEffect(() => {
+    openViewRef.current = openView
+  }, [openView])
+
   const lastFrame = Math.max(0, currentVideo.frame_count - 1)
   const usable = backgroundSrc !== null
 
-  // Render counter: StrictMode double-invokes render in dev, so expect this to
-  // climb by 2 per real render. A jump of hundreds between two frames means a
-  // render loop, which is what the request counters would then be tracking.
-  prof.renders += 1
-
+  // Scrubbing only. Playback takes its frames from the prefetch cache instead,
+  // so this path is unchanged by it.
   const fetchFrame = useCallback(async (index: number, maxWidth: number) => {
     const seq = ++requestSeqRef.current
-    prof.issued += 1
-    const started = performance.now()
     setLoading(true)
     setError(null)
     try {
       const result = await getVideoFrame(index, maxWidth)
-      const took = performance.now() - started
-      prof.fetchMs = took
-      if (seq !== requestSeqRef.current) {
-        prof.discarded += 1
-        plog(
-          `fetch ${index} DISCARDED after ${took.toFixed(0)}ms ` +
-            `(issued=${prof.issued} accepted=${prof.accepted} discarded=${prof.discarded})`,
-        )
-        return
-      }
-      prof.accepted += 1
-      plog(
-        `fetch ${index} ok ${took.toFixed(0)}ms  ` +
-          `payload=${(result.frame.length / 1024).toFixed(0)}KB ` +
-          `grid=${result.width}x${result.height}  ` +
-          `issued=${prof.issued} accepted=${prof.accepted} discarded=${prof.discarded} renders=${prof.renders}`,
-      )
+      if (seq !== requestSeqRef.current) return
       setFrame(result)
     } catch (err) {
       if (seq !== requestSeqRef.current) return
       setError(err instanceof Error ? err.message : 'Loading the frame failed.')
-      // frame_count comes from container metadata, which can overshoot the
-      // real end of the video, so a failed read is a normal way for playback
-      // to finish rather than something to keep pushing through.
-      setPlaying(false)
     } finally {
       if (seq === requestSeqRef.current) setLoading(false)
     }
@@ -295,41 +252,32 @@ function MovementVisualizationSection({
   // Low/Recommended/High variant costs no request.
   //
   // The throttle exists to protect against scrubber spam, where a drag can
-  // emit dozens of positions a second. Playback cannot spam: it issues the
-  // next request only once the previous frame is decoded, so it is already
-  // limited to one request in flight and goes direct. Leaving the throttle in
-  // that path only added a fixed 250 ms of dead time per frame.
+  // emit dozens of positions a second.
+  //
+  // Playback does not come through here at all: `useFramePlayback` requests
+  // frames on its own lanes and hands over already decoded pixels, so while it
+  // is running this effect stays out of the way — otherwise every advance it
+  // makes would trigger a second, redundant request for the frame it just
+  // displayed. Pausing re-runs it once, which restores the data URL the
+  // "Original frame" view prefers.
   useEffect(() => {
     if (!usable || backgroundWidth === null) return
-    if (playing) {
-      void fetchFrame(frameIndex, backgroundWidth)
-      return
-    }
+    if (playing) return
     requestThrottled(frameIndex, backgroundWidth)
-  }, [usable, playing, backgroundWidth, frameIndex, fetchFrame, requestThrottled])
+  }, [usable, playing, backgroundWidth, frameIndex, requestThrottled])
 
+  // Decodes the scrub path's frame. During playback the prefetcher decodes on
+  // its own lanes, ahead of time, and writes the result in directly.
   useEffect(() => {
     if (!frame) return
     const index = frame.frame_index
-    const started = performance.now()
     let cancelled = false
     decodeImage(frame.frame)
       .then((pixels) => {
-        const took = performance.now() - started
-        const gap = prof.lastShownAt ? performance.now() - prof.lastShownAt : 0
-        prof.lastShownAt = performance.now()
-        prof.decodeMs = took
-        prof.gapMs = gap
-        if (cancelled) prof.cancelled += 1
-        plog(
-          `decode ${index} ${took.toFixed(0)}ms` +
-            (cancelled ? ' (CANCELLED - frame skipped)' : '') +
-            `  gap-since-previous-frame=${gap.toFixed(0)}ms`,
-        )
         if (cancelled) return
         setFramePixels(pixels)
-        // Records which frame the decoded pixels belong to, so playback can
-        // wait for this frame to be on screen before asking for the next.
+        // Records which frame the decoded pixels belong to, so the enlarged
+        // view knows whether its data URL still matches what is on screen.
         setRenderedIndex(index)
       })
       .catch(() => {
@@ -352,12 +300,8 @@ function MovementVisualizationSection({
       return
     }
     let cancelled = false
-    const started = performance.now()
     decodeImage(backgroundSrc, targetWidth, targetHeight)
       .then((pixels) => {
-        // Should fire ONCE per run, not per frame. If this logs on every
-        // frame, the background is being re-decoded needlessly.
-        plog(`background decode ${(performance.now() - started).toFixed(0)}ms`)
         if (!cancelled) setBackgroundPixels(pixels)
       })
       .catch(() => {
@@ -376,45 +320,89 @@ function MovementVisualizationSection({
       setViews(null)
       return
     }
-    const started = performance.now()
-    const computed = computeMovementViews(
-      framePixels.data,
-      backgroundPixels.data,
-      threshold,
-    )
-    prof.computeMs = performance.now() - started
-    plog(`compute ${prof.computeMs.toFixed(0)}ms`)
-    setViews(computed)
-    setProfText(
-      `gap ${prof.gapMs.toFixed(0)}ms = fetch ${prof.fetchMs.toFixed(0)} + ` +
-        `decode ${prof.decodeMs.toFixed(0)} + compute ${prof.computeMs.toFixed(0)} ` +
-        `+ unaccounted ${Math.max(0, prof.gapMs - prof.fetchMs - prof.decodeMs - prof.computeMs).toFixed(0)} · ` +
-        `req ${prof.issued}/${prof.accepted} ok, ${prof.discarded} dropped, ` +
-        `${prof.cancelled} decodes cancelled · renders ${prof.renders}`,
+    setViews(
+      computeMovementViews(framePixels.data, backgroundPixels.data, threshold),
     )
   }, [framePixels, backgroundPixels, threshold])
 
-  // Playback belongs to the enlarged view, so closing it — by the backdrop,
-  // the close button, Escape, or the background going away — always stops.
-  useEffect(() => {
-    if (!openView) setPlaying(false)
-  }, [openView])
+  // Show a frame the prefetcher has already fetched and decoded.
+  //
+  // This deliberately sets no state. Routing a frame through React state means
+  // a render and commit per frame, and React's dev build instruments those by
+  // serialising props for its performance track — with a 2 MB `framePixels` and
+  // four 2 MB view arrays that cost ~840 ms per frame on the dev server, versus
+  // 4 ms in a production build. Painting straight into the canvas keeps the two
+  // builds within a few per cent of each other.
+  //
+  // The computation is unchanged: the same `computeMovementViews` call over the
+  // same inputs as a scrub, so there is still no separate animation path — only
+  // a different way of getting the result on screen.
+  const showPrefetched = useCallback((index: number, pixels: Pixels) => {
+    const background = backgroundPixelsRef.current
+    const key = openViewRef.current
+    if (!background || !key) return
 
-  // Step to the next frame only once the requested one has arrived *and been
-  // decoded*. That makes the loop self-clocking, with no timer of its own:
-  // exactly one request is ever in flight, the playhead can never run ahead
-  // of what is on screen, and every frame is displayed rather than
-  // superseded mid-decode. Playback therefore runs at whatever rate the
-  // frames come back.
-  useEffect(() => {
-    if (!playing || !openView) return
-    if (renderedIndex !== frameIndex) return
-    if (frameIndex >= lastFrame) {
-      setPlaying(false)
-      return
+    const computed = computeMovementViews(
+      pixels.data,
+      background.data,
+      thresholdRef.current,
+    )
+
+    // Read during render for the counter and the moving-pixel share, which the
+    // buffer readout's own interval refreshes a couple of times a second.
+    liveIndexRef.current = index
+    liveShareRef.current = computed.foregroundCount / computed.pixelCount
+    // Handed back to React state once, when playback stops.
+    lastAdvancedRef.current = { index, pixels, views: computed }
+
+    const canvas = modalCanvasRef.current
+    if (canvas && key !== 'background') {
+      paintCanvas(
+        canvas,
+        key === 'frame' ? pixels.data : computed[key],
+        pixels.width,
+        pixels.height,
+      )
     }
-    setFrameIndex(frameIndex + 1)
-  }, [playing, openView, renderedIndex, frameIndex, lastFrame])
+  }, [])
+
+  const stopPlayback = useCallback(() => setPlaying(false), [])
+
+  // The frame already on screen, so starting playback does not re-request what
+  // the scrub path just loaded.
+  const seed = useMemo(
+    () =>
+      framePixels !== null && renderedIndex === frameIndex
+        ? { index: frameIndex, pixels: framePixels }
+        : null,
+    [framePixels, renderedIndex, frameIndex],
+  )
+
+  // Frames are requested at the decoded grid rather than at `backgroundWidth`,
+  // which is what the server actually returned once it clamped to the source
+  // width — so the cache key and the requests agree with what is on screen.
+  const { buffering, stats, capacity, reset: resetPlayback } = useFramePlayback({
+    playing: playing && openView !== null,
+    frameIndex,
+    lastFrame,
+    fps: currentVideo.fps,
+    gridWidth: framePixels?.width ?? null,
+    gridHeight: framePixels?.height ?? null,
+    cacheKey: `${currentVideo.video_id}:${framePixels?.width ?? 0}x${framePixels?.height ?? 0}`,
+    onAdvance: showPrefetched,
+    onEnd: stopPlayback,
+    seed,
+  })
+
+  // Playback belongs to the enlarged view, so closing it — by the backdrop,
+  // the close button, Escape, or the background going away — always stops, and
+  // the buffer goes with it rather than holding up to 128 MB of frames nobody
+  // is watching. Pausing keeps it, so resuming is instant.
+  useEffect(() => {
+    if (openView) return
+    setPlaying(false)
+    resetPlayback()
+  }, [openView, resetPlayback])
 
   useEffect(() => {
     if (!openView) return
@@ -425,9 +413,50 @@ function MovementVisualizationSection({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [openView])
 
-  const foregroundShare = views
-    ? views.foregroundCount / views.pixelCount
-    : null
+  // Seed the live readouts from state when playback starts, so the counter and
+  // the moving-pixel share show the frame it began from rather than zero while
+  // the buffer prewarms. Neither dependency changes while playing.
+  useEffect(() => {
+    if (!playing) return
+    liveIndexRef.current = frameIndex
+    liveShareRef.current = views
+      ? views.foregroundCount / views.pixelCount
+      : null
+  }, [playing, frameIndex, views])
+
+  // Hand the last played frame back to React once playback stops, so the grid,
+  // the scrubber, the summary and the paused enlarged view all agree with what
+  // is on screen. One render, instead of one per frame.
+  useEffect(() => {
+    if (playing) return
+    const last = lastAdvancedRef.current
+    if (!last) return
+    lastAdvancedRef.current = null
+    setFrameIndex(last.index)
+    setFramePixels(last.pixels)
+    setRenderedIndex(last.index)
+    setViews(last.views)
+  }, [playing])
+
+  // Paints the enlarged view while it is *not* playing — on open, on a scrub,
+  // and when the threshold moves. Playback paints the same canvas itself.
+  useEffect(() => {
+    if (playing || !openView || openView === 'background') return
+    const canvas = modalCanvasRef.current
+    if (!canvas || !framePixels) return
+    const data = openView === 'frame' ? framePixels.data : views?.[openView]
+    if (data) paintCanvas(canvas, data, framePixels.width, framePixels.height)
+  }, [playing, openView, views, framePixels])
+
+  // While playing these come from the imperative path; the buffer readout's
+  // interval re-renders a couple of times a second, which is what refreshes
+  // them. Frozen state would otherwise show the frame playback started from.
+  const displayIndex = playing ? liveIndexRef.current : frameIndex
+  const foregroundShare = playing
+    ? liveShareRef.current
+    : views
+      ? views.foregroundCount / views.pixelCount
+      : null
 
   const togglePlay = () => {
     if (playing) {
@@ -439,11 +468,22 @@ function MovementVisualizationSection({
     setPlaying(true)
   }
 
+  // The grid, from React state. Only rendered while not playing: `gridSuspended`
+  // drops it during playback, so nothing here is on a per-frame path.
   const renderMedia = (key: ViewKey) => {
     switch (key) {
       case 'frame':
-        return frame ? (
-          <img src={frame.frame} alt="Selected video frame" />
+        // Prefer the data URL when it matches what is decoded; after playback
+        // the scrub path has not caught up yet, so fall back to the pixels.
+        if (frame && frame.frame_index === renderedIndex) {
+          return <img src={frame.frame} alt="Selected video frame" />
+        }
+        return framePixels ? (
+          <ViewCanvas
+            data={framePixels.data}
+            width={framePixels.width}
+            height={framePixels.height}
+          />
         ) : null
       case 'background':
         return backgroundSrc ? (
@@ -461,17 +501,31 @@ function MovementVisualizationSection({
     }
   }
 
+  // The enlarged view: one canvas element that survives play/pause, painted by
+  // playback while it runs and by the effect above when it does not. The
+  // background is the exception — it is static, so it stays an <img> and
+  // playback has nothing to repaint for it.
+  const renderModalMedia = (key: ViewKey) =>
+    key === 'background' ? (
+      backgroundSrc ? (
+        <img src={backgroundSrc} alt="Generated background" />
+      ) : null
+    ) : (
+      <canvas
+        ref={modalCanvasRef}
+        className={key === 'foreground' ? 'movement-transparent' : undefined}
+      />
+    )
+
   const openInfo = VIEWS.find((view) => view.key === openView)
 
-  // While the enlarged view is playing, the grid is completely hidden behind
-  // the modal, yet every frame still repainted all four of its canvases (each
-  // reallocating a full-size backing store) and re-pointed the original-frame
-  // <img> at a brand-new ~1 MB data URL, which Chrome loads and decodes as a
-  // fresh resource and then keeps in its image cache. That invisible work
-  // dominated the frame time. Suspending the grid's media leaves exactly one
-  // canvas painting: the one being watched. Only the media is dropped, so the
-  // captions and layout are untouched, and paused/non-playback rendering is
-  // completely unaffected.
+  // The grid sits behind the modal while playing, so its media is dropped: it
+  // would otherwise show the frame playback started from, and re-point the
+  // original-frame <img> at a ~1 MB data URL Chrome would load, decode and
+  // retain as a fresh resource. Since playback no longer renders per frame this
+  // is no longer a per-frame saving, just an honest one — nothing stale is
+  // painted where it cannot be seen. Only the media is dropped, so the captions
+  // and layout are untouched, and paused rendering is unaffected.
   const gridSuspended = playing && openView !== null
 
   return (
@@ -493,12 +547,12 @@ function MovementVisualizationSection({
         <>
           <div className="experiment-controls">
             <label>
-              Frame ({frameIndex} of {lastFrame})
+              Frame ({displayIndex} of {lastFrame})
               <input
                 type="range"
                 min={0}
                 max={lastFrame}
-                value={frameIndex}
+                value={displayIndex}
                 onChange={(e) => setFrameIndex(Number(e.target.value))}
               />
             </label>
@@ -611,30 +665,33 @@ function MovementVisualizationSection({
                   </button>
                 </header>
                 <div className="movement-modal-media">
-                  {renderMedia(openInfo.key)}
+                  {renderModalMedia(openInfo.key)}
                 </div>
                 <div className="movement-modal-controls">
                   <button type="button" onClick={togglePlay}>
                     {playing ? 'Pause' : 'Play'}
                   </button>
                   <span className="movement-modal-frame">
-                    Frame {frameIndex} of {lastFrame}
-                    {playing && loading && ' · loading…'}
+                    Frame {displayIndex} of {lastFrame}
+                    {buffering && ' · buffering…'}
                   </span>
                 </div>
-                {PROFILE && profText && (
-                  <p
-                    className="movement-modal-frame"
-                    style={{ marginTop: '0.4rem' }}
-                  >
-                    {profText}
+                {playing && (
+                  <p className="movement-modal-stats">
+                    {`buffer ${stats.buffered}/${capacity} frames ` +
+                      `(${(stats.bytes / 1024 / 1024).toFixed(0)} MB, ${stats.inFlight} in flight) · ` +
+                      `supply ${stats.supplyFps.toFixed(1)} fps · ` +
+                      `playback ${stats.playbackFps.toFixed(1)} of ${currentVideo.fps.toFixed(0)} fps · ` +
+                      `${stats.underruns} underruns (${(stats.stalledMs / 1000).toFixed(1)} s)`}
                   </p>
                 )}
                 <p className="movement-modal-description">
                   {openInfo.description}
                   {' '}This view is regenerated for each frame during playback,
-                  which runs as fast as frames are returned rather than at the
-                  video&apos;s own frame rate.
+                  which targets the video&apos;s own frame rate from a buffer of
+                  prefetched frames. If the buffer runs dry it waits rather than
+                  skipping, so playback slows to the rate frames arrive instead
+                  of dropping any.
                 </p>
               </div>
             </div>

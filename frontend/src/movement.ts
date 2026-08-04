@@ -15,10 +15,25 @@ export const MAX_RGB_DISTANCE = Math.sqrt(3) * 255
 
 export const DEFAULT_MOVEMENT_THRESHOLD = 30
 
+/**
+ * How much of its brightness the static background keeps in the "moving pixels
+ * in colour" view — dark enough to be almost invisible, so the foreground
+ * carries the image, while still leaving enough of the scene to place the
+ * moving pixels in.
+ *
+ * Presentation only. It is applied after a pixel has been classified, to
+ * background pixels of that one view: the classification, the counts and every
+ * other view are unaffected.
+ */
+export const HIGHLIGHT_BACKGROUND_BRIGHTNESS = 0.2
+
 export interface MovementViews {
   /** Distance from the background as grayscale, clipped at 255. */
   difference: Uint8ClampedArray
-  /** Grayscale background with foreground pixels in their original colour. */
+  /**
+   * Heavily dimmed grayscale background, with foreground pixels in their
+   * original colour. See `HIGHLIGHT_BACKGROUND_BRIGHTNESS`.
+   */
   highlight: Uint8ClampedArray
   /** Binary mask: white where foreground, black where background. */
   mask: Uint8ClampedArray
@@ -78,13 +93,15 @@ export function computeMovementViews(
       foreground[i + 2] = frame[i + 2]
       foreground[i + 3] = 255
     } else {
-      // Rec. 601 luma of the background, so static areas read as a
-      // desaturated reference the moving pixels stand out against.
+      // Rec. 601 luma of the background, dimmed to a fraction of its
+      // brightness, so static areas read as a very dark reference the moving
+      // pixels stand out against rather than competing with them.
       const luma =
         0.299 * background[i] +
         0.587 * background[i + 1] +
         0.114 * background[i + 2]
-      highlight[i] = highlight[i + 1] = highlight[i + 2] = luma
+      highlight[i] = highlight[i + 1] = highlight[i + 2] =
+        luma * HIGHLIGHT_BACKGROUND_BRIGHTNESS
 
       // foreground stays zeroed: transparent.
     }

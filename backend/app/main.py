@@ -6,6 +6,11 @@ from app.api.routes import experiments, health, videos
 FRONTEND_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    # `vite preview`, for checking a production build against the same API.
+    # React's dev-mode instrumentation is stripped there, which matters when
+    # measuring per-frame cost.
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
 ]
 
 
