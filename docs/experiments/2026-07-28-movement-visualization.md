@@ -21,12 +21,17 @@ For one selected frame, six views side by side:
 Views 3–6 are all derived from a single comparison of that frame against
 that background, so they always agree with each other.
 
-### Background brightness in view 4 (2026-08-04)
+### Background brightness in view 4 (2026-08-04, revised 2026-08-05)
 
 Static pixels in the "moving pixels in colour" view keep only
-`HIGHLIGHT_BACKGROUND_BRIGHTNESS` (0.2) of their Rec. 601 luma, so the scene is
+`HIGHLIGHT_BACKGROUND_BRIGHTNESS` (0.08) of their Rec. 601 luma, so the scene is
 almost invisible and the foreground carries the image. Enough of it survives to
 place the moving pixels in context, which a black background would not.
+
+The value started at 0.2 and was lowered to 0.08 on Roman's feedback that the
+moving pixels needed to stand out more: 20 % still left recognisable scene
+detail competing with the coloured foreground. The view's caption derives its
+percentage from the constant, so the two cannot drift apart.
 
 Presentation only, and only for that view: the multiply happens after a pixel
 has been classified, on the background branch. The threshold, the classification,

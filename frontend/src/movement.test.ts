@@ -99,9 +99,9 @@ describe('computeMovementViews', () => {
     const views = computeMovementViews(frame, background, 30)
 
     // Rec. 601 luma of (200, 100, 0) = 0.299*200 + 0.587*100 + 0.114*0 = 118.4,
-    // dimmed to 20 %: 118.4 * 0.2 = 23.68, rounded by Uint8ClampedArray to 24.
+    // dimmed to 8 %: 118.4 * 0.08 = 9.472, rounded by Uint8ClampedArray to 9.
     const [r, g, b, a] = pixelAt(views.highlight, 0)
-    expect([r, g, b]).toEqual([24, 24, 24])
+    expect([r, g, b]).toEqual([9, 9, 9])
     expect(a).toBe(255)
 
     // The moving pixel keeps the frame's original colour, not the background's.

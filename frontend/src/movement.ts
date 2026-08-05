@@ -25,7 +25,7 @@ export const DEFAULT_MOVEMENT_THRESHOLD = 30
  * background pixels of that one view: the classification, the counts and every
  * other view are unaffected.
  */
-export const HIGHLIGHT_BACKGROUND_BRIGHTNESS = 0.2
+export const HIGHLIGHT_BACKGROUND_BRIGHTNESS = 0.08
 
 export interface MovementViews {
   /** Distance from the background as grayscale, clipped at 255. */

@@ -4,6 +4,7 @@ import { decodeImage, imageWidth, type Pixels } from '../imageData'
 import {
   computeMovementViews,
   DEFAULT_MOVEMENT_THRESHOLD,
+  HIGHLIGHT_BACKGROUND_BRIGHTNESS,
   MAX_RGB_DISTANCE,
   type MovementViews,
 } from '../movement'
@@ -38,8 +39,8 @@ const VIEWS: { key: ViewKey; title: string; description: string }[] = [
   {
     key: 'highlight',
     title: 'Moving pixels in colour',
-    description:
-      'Background pixels are dimmed to 20 % grayscale, moving pixels remain in colour.',
+    // Percentage read from the constant so the caption cannot drift from it.
+    description: `Background pixels are dimmed to ${HIGHLIGHT_BACKGROUND_BRIGHTNESS * 100} % grayscale, moving pixels remain in colour.`,
   },
   {
     key: 'mask',
