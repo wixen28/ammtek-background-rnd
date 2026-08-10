@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getPixelTimeline, type PixelTimeline, type VideoRecord } from '../api'
+import {
+  computePixelHistogram,
+  DEFAULT_BUCKET_WIDTH,
+  type BucketWidth,
+} from '../histogram'
+import ColorClusterList from './ColorClusterList'
+import RgbHistogramChart from './RgbHistogramChart'
 import RgbLineChart from './RgbLineChart'
 
 interface PixelTimelineSectionProps {
@@ -29,6 +36,13 @@ function PixelTimelineSection({
   const [timeline, setTimeline] = useState<PixelTimeline | null>(null)
   const [timelineLoading, setTimelineLoading] = useState(false)
   const [timelineError, setTimelineError] = useState<string | null>(null)
+  // The histogram is split across both columns — the joint colour buckets
+  // under the background, the per-channel panels under the timeline — so the
+  // bucket width and the computation live here and are shared, never
+  // computed twice.
+  const [bucketWidth, setBucketWidth] = useState<BucketWidth>(
+    DEFAULT_BUCKET_WIDTH,
+  )
 
   // Drag-to-scrub state. Sequence guard: only the response to the most
   // recently issued request may update the UI, so a slow earlier response
@@ -179,6 +193,14 @@ function PixelTimelineSection({
   const selectedY = Number(pixelY)
   const hasSelection = pixelX !== '' && pixelY !== ''
 
+  const histogram = useMemo(
+    () =>
+      timeline && timeline.frames.length > 0
+        ? computePixelHistogram(timeline.frames, bucketWidth)
+        : null,
+    [timeline, bucketWidth],
+  )
+
   return (
     <section className="pixel-section">
       <h3>Pixel Timeline Analysis</h3>
@@ -188,39 +210,50 @@ function PixelTimelineSection({
       </p>
 
       <div className="pixel-layout">
-        {background && (
+        {/* The left column also carries the joint colour buckets, so it stays
+            present for a pixel typed in before any run produced a
+            background. */}
+        {(background || histogram) && (
           <div className="pixel-layout-preview">
-            <h4>Generated Background</h4>
-            <p className="content-hint">
-              Click to select a pixel, or click and drag to scrub.
-            </p>
-            {backgroundToolbar}
-            <div className="pixel-select-wrap">
-              <img
-                className="background-image background-image-clickable"
-                src={background}
-                alt="Generated background"
-                draggable={false}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerEnd}
-                onPointerCancel={handlePointerEnd}
-              />
-              {hasSelection && (
-                <span
-                  className="pixel-marker"
-                  style={{
-                    left: `${((selectedX + 0.5) / currentVideo.width) * 100}%`,
-                    top: `${((selectedY + 0.5) / currentVideo.height) * 100}%`,
-                  }}
-                />
-              )}
-            </div>
-            <p>
-              <a href={background} download={downloadName}>
-                Download background (PNG)
-              </a>
-            </p>
+            {background && (
+              <>
+                <h4>Generated Background</h4>
+                <p className="content-hint">
+                  Click to select a pixel, or click and drag to scrub.
+                </p>
+                {backgroundToolbar}
+                <div className="pixel-select-wrap">
+                  <img
+                    className="background-image background-image-clickable"
+                    src={background}
+                    alt="Generated background"
+                    draggable={false}
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerEnd}
+                    onPointerCancel={handlePointerEnd}
+                  />
+                  {hasSelection && (
+                    <span
+                      className="pixel-marker"
+                      style={{
+                        left: `${((selectedX + 0.5) / currentVideo.width) * 100}%`,
+                        top: `${((selectedY + 0.5) / currentVideo.height) * 100}%`,
+                      }}
+                    />
+                  )}
+                </div>
+                <p>
+                  <a href={background} download={downloadName}>
+                    Download background (PNG)
+                  </a>
+                </p>
+              </>
+            )}
+
+            {/* The dominant colour states of the selected pixel, filling the
+                space beside the timeline rather than lengthening the page. */}
+            {histogram && <ColorClusterList histogram={histogram} />}
           </div>
         )}
 
@@ -265,6 +298,26 @@ function PixelTimelineSection({
           {timelineError && <p className="video-error">{timelineError}</p>}
 
           {timeline && <RgbLineChart frames={timeline.frames} />}
+
+          {/* Same samples, other question: the timeline shows when the values
+              occurred, the histogram which ranges occurred most often. Both
+              read the one timeline response, so a new pixel updates them
+              together. */}
+          {histogram && (
+            <>
+              <h5 className="pixel-subheading">Value distribution</h5>
+              <p className="content-hint">
+                How often each value range occurred across the{' '}
+                {histogram.sampleCount} analyzed frames — diagnostic for
+                whether this pixel has one dominant value or several competing
+                ones.
+              </p>
+              <RgbHistogramChart
+                histogram={histogram}
+                onBucketWidthChange={setBucketWidth}
+              />
+            </>
+          )}
         </div>
       </div>
     </section>

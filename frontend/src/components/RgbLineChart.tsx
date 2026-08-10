@@ -1,13 +1,6 @@
 import { useRef, useState } from 'react'
 import type { PixelSample } from '../api'
-
-// Validated for CVD separation and 3:1 contrast on the white surface
-// (dataviz palette check) while still reading as red/green/blue.
-const SERIES = [
-  { key: 'r', label: 'Red', color: '#ef6a5a' },
-  { key: 'g', label: 'Green', color: '#006300' },
-  { key: 'b', label: 'Blue', color: '#1c5cab' },
-] as const
+import { RGB_SERIES as SERIES } from '../rgbSeries'
 
 const W = 680
 const H = 280
