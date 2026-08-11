@@ -19,6 +19,12 @@ const H = M.top + ROW_STRIDE * RGB_SERIES.length - ROW_GAP + M.bottom
 const MAX_BAR_W = 24
 const BAR_RADIUS = 4
 const BAR_GAP = 2
+// The gap between bars is only affordable while the band is wide enough to
+// spare it. At bucket width 1 there are 256 bands of ~2.4px, where a 2px gap
+// would leave a 1px sliver of bar and turn the distribution into a sparse
+// comb. Below this band width the bars are drawn touching, so the shape reads
+// as the continuous distribution it is at one bar per value.
+const MIN_BAND_FOR_GAP = 5
 
 // Same ticks as the timeline's y axis, so the two charts read as one system:
 // there the value domain runs vertically, here horizontally.
@@ -63,7 +69,8 @@ function RgbHistogramChart({
 
   const xOfValue = (value: number) => M.left + (value / 256) * IW
   const band = IW / bucketCount
-  const barW = Math.max(1, Math.min(MAX_BAR_W, band - BAR_GAP))
+  const barGap = band >= MIN_BAND_FOR_GAP ? BAR_GAP : 0
+  const barW = Math.max(1, Math.min(MAX_BAR_W, band - barGap))
   const barX = (index: number) => M.left + index * band + (band - barW) / 2
 
   const rowTop = (row: number) => M.top + row * ROW_STRIDE
@@ -156,9 +163,11 @@ function RgbHistogramChart({
                 textAnchor="end"
                 className="chart-row-stat"
               >
-                median {formatMedian(data.median)} · range {data.min}–{data.max} ·
-                fullest bucket {peak.start}–{peak.end} (
-                {formatShare(peak.count / sampleCount)})
+                median {formatMedian(data.median)} · range {data.min}–{data.max} ·{' '}
+                {bucketWidth === 1
+                  ? `fullest value ${peak.start}`
+                  : `fullest bucket ${peak.start}–${peak.end}`}{' '}
+                ({formatShare(peak.count / sampleCount)})
               </text>
 
               {/* Baseline plus one gridline at the shared maximum. */}
@@ -274,7 +283,9 @@ function RgbHistogramChart({
                 stroke="#e1e0d9"
               />
               <text x={10} y={16} className="chart-tt-title">
-                values {hoveredStart}–{hoveredStart + bucketWidth - 1}
+                {bucketWidth === 1
+                  ? `value ${hoveredStart}`
+                  : `values ${hoveredStart}–${hoveredStart + bucketWidth - 1}`}
               </text>
               {RGB_SERIES.map((series, row) => {
                 const bucket = byChannel.get(series.key)!.buckets[hover]
@@ -319,7 +330,9 @@ function RgbHistogramChart({
                 {histogram.channels[0].buckets.map((bucket) => (
                   <tr key={bucket.index}>
                     <td>
-                      {bucket.start}–{bucket.end}
+                      {bucketWidth === 1
+                        ? bucket.start
+                        : `${bucket.start}–${bucket.end}`}
                     </td>
                     {RGB_SERIES.map((series) => (
                       <td key={series.key}>

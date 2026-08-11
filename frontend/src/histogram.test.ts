@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { PixelSample } from './api'
 import {
   assertBucketWidth,
+  BUCKET_WIDTHS,
   bucketIndexOf,
   computePixelHistogram,
   DEFAULT_BUCKET_WIDTH,
@@ -57,7 +58,8 @@ describe('bucketIndexOf', () => {
 
 describe('assertBucketWidth', () => {
   it('accepts the widths offered in the UI', () => {
-    for (const width of [4, 8, 16, 32]) {
+    expect([...BUCKET_WIDTHS]).toEqual([1, 4, 8, 16, 32])
+    for (const width of BUCKET_WIDTHS) {
       expect(() => assertBucketWidth(width)).not.toThrow()
     }
   })
@@ -346,5 +348,76 @@ describe('computePixelHistogram — joint colour clusters', () => {
 
     expect(computePixelHistogram(input, 4).clusters).toHaveLength(2)
     expect(computePixelHistogram(input, 32).clusters).toHaveLength(1)
+  })
+})
+
+// Width 1 is the ungrouped reference view: one bar per 8-bit value, no
+// grouping decisions of our own between the data and the reader.
+describe('computePixelHistogram — bucket width 1', () => {
+  it('gives every 8-bit value its own bucket', () => {
+    const histogram = computePixelHistogram(samples(repeat([100, 100, 100], 3)), 1)
+
+    expect(histogram.bucketCount).toBe(256)
+    for (const c of histogram.channels) {
+      expect(c.buckets).toHaveLength(256)
+      expect(c.buckets.every((b) => b.start === b.index && b.end === b.index)).toBe(
+        true,
+      )
+    }
+    expect(occupied(histogram, 'r')).toEqual([[100, 3]])
+  })
+
+  it('counts raw frequencies, so adjacent values stay separate', () => {
+    const histogram = computePixelHistogram(
+      samples([
+        ...repeat([189, 0, 0], 4),
+        ...repeat([190, 0, 0], 2),
+        ...repeat([194, 0, 0], 3),
+      ]),
+      1,
+    )
+
+    expect(occupied(histogram, 'r')).toEqual([
+      [189, 4],
+      [190, 2],
+      [194, 3],
+    ])
+    expect(channel(histogram, 'r').peakIndex).toBe(189)
+  })
+
+  // The reason width 1 exists: one physical state whose values straddle a
+  // bucket boundary splits in two at a wider width and reads as two modes.
+  // Ungrouped, there is no boundary to straddle.
+  it('does not split a run of values across a bucket boundary', () => {
+    const input = samples([...repeat([191, 191, 191], 5), ...repeat([192, 192, 192], 5)])
+
+    // Width 16 puts 191 and 192 in different buckets — two apparent modes.
+    expect(occupied(computePixelHistogram(input, 16), 'r')).toEqual([
+      [176, 5],
+      [192, 5],
+    ])
+    expect(computePixelHistogram(input, 16).clusters).toHaveLength(2)
+    // Ungrouped, the two values are simply neighbours, one apart.
+    expect(occupied(computePixelHistogram(input, 1), 'r')).toEqual([
+      [191, 5],
+      [192, 5],
+    ])
+  })
+
+  it('reports clusters as exact colours, with the sample as its own swatch', () => {
+    const histogram = computePixelHistogram(
+      samples([...repeat([189, 196, 196], 3), ...repeat([161, 168, 171], 1)]),
+      1,
+    )
+
+    expect(histogram.clusters).toHaveLength(2)
+    const [first] = histogram.clusters
+    expect(first.count).toBe(3)
+    expect(first.r).toEqual([189, 189])
+    expect(first.g).toEqual([196, 196])
+    expect(first.b).toEqual([196, 196])
+    // Bucket centre and observed value coincide when the bucket is one value
+    // wide, so the swatch is the colour itself rather than an approximation.
+    expect(first.color).toEqual({ r: 189, g: 196, b: 196 })
   })
 })

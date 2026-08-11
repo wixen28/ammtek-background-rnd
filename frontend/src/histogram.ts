@@ -29,10 +29,18 @@ const VALUE_MAX = DOMAIN - 1
 
 /**
  * Bucket widths offered in the UI, from fine to coarse. All divide 256 (see
- * `assertBucketWidth`) and cover a useful range: 4 → 64 buckets resolves
- * codec noise, 32 → 8 buckets shows only gross structure.
+ * `assertBucketWidth`) and cover a useful range: 1 → no grouping at all, one
+ * bar per 8-bit value, 4 → 64 buckets resolves codec noise, 32 → 8 buckets
+ * shows only gross structure.
+ *
+ * Width 1 is the ungrouped reference view. Every wider bucketing imposes
+ * boundaries the data knows nothing about, so a single physical state whose
+ * values straddle a boundary splits into two adjacent bars and reads as two
+ * modes. Width 1 has no boundaries to straddle: it is the only setting that
+ * shows the raw frequency pattern, against which a split seen at 8/16/32 can
+ * be judged as an artifact of the grid rather than a second state.
  */
-export const BUCKET_WIDTHS = [4, 8, 16, 32] as const
+export const BUCKET_WIDTHS = [1, 4, 8, 16, 32] as const
 export type BucketWidth = (typeof BUCKET_WIDTHS)[number]
 
 /** 16 → 16 buckets: fine enough to separate two modes, coarse enough that

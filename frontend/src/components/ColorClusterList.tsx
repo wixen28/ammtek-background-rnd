@@ -15,9 +15,12 @@ interface ColorClusterListProps {
  *  Sits under the generated background: it is the compact summary of which
  *  colour states the pixel actually took. */
 function ColorClusterList({ histogram }: ColorClusterListProps) {
-  const { clusters } = histogram
+  const { clusters, bucketWidth } = histogram
   const shown = clusters.slice(0, CLUSTERS_SHOWN)
   const remaining = clusters.length - shown.length
+  // At width 1 a "bucket" is one exact colour, so `189–189` would be noise.
+  const range = ([lo, hi]: [number, number]) =>
+    bucketWidth === 1 ? `${lo}` : `${lo}–${hi}`
 
   return (
     <div className="histogram-clusters">
@@ -41,8 +44,7 @@ function ColorClusterList({ histogram }: ColorClusterListProps) {
               }}
             />
             <span className="histogram-cluster-range">
-              R {cluster.r[0]}–{cluster.r[1]} G {cluster.g[0]}–{cluster.g[1]} B{' '}
-              {cluster.b[0]}–{cluster.b[1]}
+              R {range(cluster.r)} G {range(cluster.g)} B {range(cluster.b)}
             </span>
             <span className="histogram-share-track">
               <span
