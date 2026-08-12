@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { BackgroundRanges } from '../backgroundRanges'
 import { BUCKET_WIDTHS, type BucketWidth, type PixelHistogram } from '../histogram'
 import { RGB_SERIES } from '../rgbSeries'
 import { formatMedian, formatShare } from './histogramFormat'
@@ -30,6 +31,16 @@ const MIN_BAND_FOR_GAP = 5
 // there the value domain runs vertically, here horizontally.
 const X_TICKS = [0, 64, 128, 192, 255]
 
+// The accepted-range band. Neutral ink like the median marker, not a series
+// colour: it is an annotation over all three panels, and any hue here would
+// read as "this channel". The two ranges share one fill because they mean the
+// same thing — accepted — and are told apart by the edge dash and the rank
+// label, not by colour.
+const BAND_INK = '#52514e'
+const BAND_FILL_OPACITY = 0.09
+/** Below this the band is too narrow to hold its rank label legibly. */
+const MIN_BAND_FOR_LABEL = 14
+
 const TOOLTIP_W = 172
 // Kept short enough to stay inside the first panel and its gap, so the other
 // panels' headers (median, range, fullest bucket) are never covered.
@@ -56,11 +67,16 @@ interface RgbHistogramChartProps {
   // views always describe the same bucketing.
   histogram: PixelHistogram
   onBucketWidthChange: (bucketWidth: BucketWidth) => void
+  // What currently counts as background, marked over the bars. Derived from
+  // the raw values rather than from this chart's bucketing, so the boundaries
+  // stay put when the bucket width changes.
+  ranges: BackgroundRanges | null
 }
 
 function RgbHistogramChart({
   histogram,
   onBucketWidthChange,
+  ranges,
 }: RgbHistogramChartProps) {
   const [hover, setHover] = useState<number | null>(null)
   const [tableOpen, setTableOpen] = useState(false)
@@ -126,6 +142,31 @@ function RgbHistogramChart({
           </svg>
           channel median
         </span>
+        {ranges && (
+          <span className="histogram-marker-key">
+            <svg viewBox="0 0 14 10" aria-hidden="true">
+              <rect
+                x="0.5"
+                y="0.5"
+                width="13"
+                height="9"
+                fill={BAND_INK}
+                fillOpacity={BAND_FILL_OPACITY}
+              />
+              <line x1="0.5" y1="0" x2="0.5" y2="10" stroke={BAND_INK} strokeWidth="1" />
+              <line
+                x1="13.5"
+                y1="0"
+                x2="13.5"
+                y2="10"
+                stroke={BAND_INK}
+                strokeWidth="1"
+              />
+            </svg>
+            accepted background range ({ranges.ranges.length === 1 ? '1' : '1, 2'}
+            ) at {formatShare(ranges.coverage)} of the signal
+          </span>
+        )}
       </div>
 
       <svg
@@ -203,6 +244,51 @@ function RgbHistogramChart({
               >
                 0
               </text>
+
+              {/* What currently counts as background on this channel, drawn
+                  under the bars so the bars stay the data. Bounds are
+                  inclusive, so the band ends at the far edge of `hi`. */}
+              {ranges?.ranges.map((range, i) => {
+                const [lo, hi] = range[series.key]
+                const x0 = xOfValue(lo)
+                const width = Math.max(1.5, xOfValue(hi + 1) - x0)
+                return (
+                  <g key={range.rank}>
+                    <rect
+                      x={x0}
+                      y={plotTop(row)}
+                      width={width}
+                      height={PLOT_H}
+                      fill={BAND_INK}
+                      fillOpacity={BAND_FILL_OPACITY}
+                    />
+                    {[x0, x0 + width].map((x) => (
+                      <line
+                        key={x}
+                        x1={x}
+                        x2={x}
+                        y1={plotTop(row)}
+                        y2={plotBottom(row)}
+                        stroke={BAND_INK}
+                        strokeWidth={1}
+                        strokeDasharray={i === 0 ? undefined : '3 2'}
+                      />
+                    ))}
+                    {/* Labelled on the first panel only: the rank is the same
+                        on all three, and repeating it three times crowds the
+                        bars it sits over. */}
+                    {row === 0 && width >= MIN_BAND_FOR_LABEL && (
+                      <text
+                        x={x0 + 3}
+                        y={plotTop(row) + 10}
+                        className="chart-tick"
+                      >
+                        {range.rank}
+                      </text>
+                    )}
+                  </g>
+                )
+              })}
 
               {data.buckets.map((bucket) =>
                 bucket.count === 0 ? null : (

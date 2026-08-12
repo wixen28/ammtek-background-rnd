@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getPixelTimeline, type PixelTimeline, type VideoRecord } from '../api'
 import {
+  computeBackgroundRanges,
+  DEFAULT_COVERAGE,
+  MAX_BACKGROUND_RANGES,
+} from '../backgroundRanges'
+import {
   computePixelHistogram,
   DEFAULT_BUCKET_WIDTH,
   type BucketWidth,
 } from '../histogram'
+import BackgroundRangeSection from './BackgroundRangeSection'
 import ColorClusterList from './ColorClusterList'
 import RgbHistogramChart from './RgbHistogramChart'
 import RgbLineChart from './RgbLineChart'
@@ -43,6 +49,12 @@ function PixelTimelineSection({
   const [bucketWidth, setBucketWidth] = useState<BucketWidth>(
     DEFAULT_BUCKET_WIDTH,
   )
+  // The accepted-range strength, owned here for the same reason: the histogram
+  // marks the ranges and the section below tests them, from one derivation.
+  const [coverage, setCoverage] = useState(DEFAULT_COVERAGE)
+  // Capping at one range is the comparison that shows why a second exists, so
+  // it is a control rather than a constant.
+  const [maxRanges, setMaxRanges] = useState(MAX_BACKGROUND_RANGES)
 
   // Drag-to-scrub state. Sequence guard: only the response to the most
   // recently issued request may update the UI, so a slow earlier response
@@ -201,7 +213,18 @@ function PixelTimelineSection({
     [timeline, bucketWidth],
   )
 
+  // Derived from the raw samples, not from the histogram, so the marked
+  // boundaries do not move when the bucket width is changed for reading.
+  const ranges = useMemo(
+    () =>
+      timeline && timeline.frames.length > 0
+        ? computeBackgroundRanges(timeline.frames, coverage, maxRanges)
+        : null,
+    [timeline, coverage, maxRanges],
+  )
+
   return (
+    <>
     <section className="pixel-section">
       <h3>Pixel Timeline Analysis</h3>
       <p className="content-hint">
@@ -315,12 +338,26 @@ function PixelTimelineSection({
               <RgbHistogramChart
                 histogram={histogram}
                 onBucketWidthChange={setBucketWidth}
+                ranges={ranges}
               />
             </>
           )}
         </div>
       </div>
     </section>
+
+    {/* Directly under the histogram it marks, at full width: the frame test
+        needs more room than the analysis column has. */}
+    <BackgroundRangeSection
+      currentVideo={currentVideo}
+      timeline={timeline}
+      ranges={ranges}
+      coverage={coverage}
+      onCoverageChange={setCoverage}
+      maxRanges={maxRanges}
+      onMaxRangesChange={setMaxRanges}
+    />
+    </>
   )
 }
 

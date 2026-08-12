@@ -24,7 +24,7 @@ import type { PixelSample } from './api'
 import { RGB_SERIES, type ChannelKey } from './rgbSeries'
 
 /** Number of distinct 8-bit values a channel can take. */
-const DOMAIN = 256
+export const DOMAIN = 256
 const VALUE_MAX = DOMAIN - 1
 
 /**
@@ -118,15 +118,22 @@ export function assertBucketWidth(bucketWidth: number): void {
   }
 }
 
-/** Bucket a single channel value. Values are rounded and clamped to 0–255,
- *  so an out-of-range value lands in the edge bucket instead of out of the
- *  array. */
-export function bucketIndexOf(value: number, bucketWidth: number): number {
-  const clamped = Math.min(VALUE_MAX, Math.max(0, Math.round(value)))
-  return Math.floor(clamped / bucketWidth)
+/**
+ * Round and clamp one channel value into the 0–255 domain, so an out-of-range
+ * value lands on the edge instead of outside the array. Shared with the
+ * accepted-range derivation, which must read the samples exactly as the
+ * histogram does or its markings would sit beside the bars they describe.
+ */
+export function clampChannelValue(value: number): number {
+  return Math.min(VALUE_MAX, Math.max(0, Math.round(value)))
 }
 
-function medianOfSorted(sorted: number[]): number {
+/** Bucket a single channel value. */
+export function bucketIndexOf(value: number, bucketWidth: number): number {
+  return Math.floor(clampChannelValue(value) / bucketWidth)
+}
+
+export function medianOfSorted(sorted: number[]): number {
   const mid = sorted.length >> 1
   return sorted.length % 2 === 1
     ? sorted[mid]
@@ -161,9 +168,7 @@ export function computePixelHistogram(
     for (const series of RGB_SERIES) {
       const index = bucketIndexOf(sample[series.key], bucketWidth)
       counts.get(series.key)![index] += 1
-      values
-        .get(series.key)!
-        .push(Math.min(VALUE_MAX, Math.max(0, Math.round(sample[series.key]))))
+      values.get(series.key)!.push(clampChannelValue(sample[series.key]))
       jointKey = jointKey * bucketCount + index
     }
     jointCounts.set(jointKey, (jointCounts.get(jointKey) ?? 0) + 1)

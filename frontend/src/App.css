@@ -362,7 +362,8 @@ button.nav-item:hover {
 
 /* Labelled key/value row: easier to scan than one run-on sentence. */
 .movement-summary,
-.variation-summary {
+.variation-summary,
+.ranges-summary {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 2rem;
@@ -373,7 +374,8 @@ button.nav-item:hover {
 }
 
 .movement-summary dt,
-.variation-summary dt {
+.variation-summary dt,
+.ranges-summary dt {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -382,7 +384,8 @@ button.nav-item:hover {
 }
 
 .movement-summary dd,
-.variation-summary dd {
+.variation-summary dd,
+.ranges-summary dd {
   margin: 0;
   font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
@@ -836,4 +839,97 @@ button.nav-item:hover {
   width: 9px;
   height: 10px;
   display: block;
+}
+
+/* The accepted-range band key is wider than the median arrow. */
+.chart .histogram-marker-key svg[viewBox^='0 0 14'] {
+  width: 14px;
+}
+
+/* Accepted background ranges, below the pixel section it reads from. */
+.ranges-section {
+  margin-top: 2rem;
+}
+
+.ranges-section h3 {
+  margin-bottom: 0.5rem;
+}
+
+.ranges-section .experiment-controls input[type='range'] {
+  width: 14rem;
+}
+
+.range-cards {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+  padding: 0;
+}
+
+.range-card {
+  flex: 1 1 20rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #e1e0d9;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: #52514e;
+}
+
+.range-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #1f2328;
+}
+
+.range-card-share {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: #52514e;
+}
+
+.range-card-bounds {
+  font-variant-numeric: tabular-nums;
+  color: #1f2328;
+}
+
+.range-card-meta {
+  font-size: 0.75rem;
+  color: #898781;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Two swatches with their names beside them: the strip's fills are two steps
+   of one neutral, so the key is what carries the meaning. */
+.strip-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-right: 0.5rem;
+}
+
+.strip-key i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgb(31 35 40 / 12%);
+}
+
+/* Capped like the pixel preview so a full-resolution frame does not push the
+   rest of the section off screen. */
+.ranges-frame canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 520px;
+  width: auto;
+  height: auto;
+  border: 1px solid #e1e0d9;
+  border-radius: 6px;
+  background-color: #1f2328;
 }
