@@ -4,15 +4,19 @@ import {
   type BackgroundVariationResult,
   type VideoRecord,
 } from '../api'
+import type { AnalysisContext } from '../App'
+import AnalyzeRangesLink from '../components/AnalyzeRangesLink'
 
 interface BackgroundVariationPageProps {
   currentVideo: VideoRecord | null
+  onAnalyze: (context: AnalysisContext) => void
 }
 
 const DEFAULT_REJECTION_THRESHOLD = 30
 
 function BackgroundVariationPage({
   currentVideo,
+  onAnalyze,
 }: BackgroundVariationPageProps) {
   const [useAllFrames, setUseAllFrames] = useState(true)
   const [targetFrames, setTargetFrames] = useState(30)
@@ -71,19 +75,6 @@ function BackgroundVariationPage({
   return (
     <>
       <h2>Background Variation</h2>
-      <p>
-        Runs the same median-anchored outlier rejection as RGB Mean, but keeps
-        the residual instead of the mean. For every pixel it measures the mean
-        Euclidean RGB distance of the <em>kept</em> samples from the temporal
-        median — the variation that rejection did not remove.
-      </p>
-      <p>
-        The mask is grayscale: black means the kept samples agree, so the
-        background estimate there is settled, and brighter means more surviving
-        variation — sensor noise, illumination drift, or motion small enough to
-        stay under the threshold. It is deliberately not a map of the rejected
-        samples, which would be a dense per-frame motion map instead.
-      </p>
       <p className="content-hint">
         Input: {currentVideo.filename} ({currentVideo.width} ×{' '}
         {currentVideo.height}, {currentVideo.frame_count} frames)
@@ -189,16 +180,6 @@ function BackgroundVariationPage({
             </div>
           </dl>
 
-          <p className="content-hint">
-            Deviation is an RGB distance on the same 0–441.7 scale as the
-            rejection threshold, and cannot exceed it. The mask is scaled from
-            zero by the maximum above, so a gray value g reads back as roughly
-            g / 255 × {result.deviation_max.toFixed(2)}.
-            {result.fallback_pixels > 0 &&
-              ' Fallback pixels (every sample rejected) have no kept samples to' +
-                ' measure and appear black, like a stable pixel.'}
-          </p>
-
           <div className="variation-grid">
             <figure className="variation-view">
               <img src={result.background} alt="Generated background" />
@@ -230,8 +211,44 @@ function BackgroundVariationPage({
               <img key={i} src={src} alt={`Sampled frame ${i + 1}`} />
             ))}
           </div>
+
+          <AnalyzeRangesLink
+            onClick={() =>
+              onAnalyze({
+                background: result.background,
+                label: 'Background Variation',
+                from: 'background-variation',
+              })
+            }
+          />
         </section>
       )}
+
+      <section className="page-notes">
+        <h4>Notes</h4>
+        <p>
+          Runs the same median-anchored outlier rejection as RGB Mean, but keeps
+          the residual instead of the mean. For every pixel it measures the mean
+          Euclidean RGB distance of the <em>kept</em> samples from the temporal
+          median — the variation that rejection did not remove.
+        </p>
+        <p>
+          The mask is grayscale: black means the kept samples agree, so the
+          background estimate there is settled, and brighter means more
+          surviving variation — sensor noise, illumination drift, or motion small
+          enough to stay under the threshold. It is deliberately not a map of
+          the rejected samples, which would be a dense per-frame motion map
+          instead.
+        </p>
+        <p>
+          Deviation is an RGB distance on the same 0–441.7 scale as the
+          rejection threshold, and cannot exceed it. The mask is scaled from
+          zero by the run&apos;s maximum, so a gray value g reads back as
+          roughly g / 255 × that maximum. Fallback pixels (every sample
+          rejected) have no kept samples to measure and appear black, like a
+          stable pixel.
+        </p>
+      </section>
     </>
   )
 }

@@ -43,9 +43,14 @@ const VALUE_MAX = DOMAIN - 1
 export const BUCKET_WIDTHS = [1, 4, 8, 16, 32] as const
 export type BucketWidth = (typeof BUCKET_WIDTHS)[number]
 
-/** 16 → 16 buckets: fine enough to separate two modes, coarse enough that
- *  a few hundred frames fill the occupied buckets visibly. */
-export const DEFAULT_BUCKET_WIDTH: BucketWidth = 16
+/**
+ * 1 → one bar per 8-bit value: the ungrouped reference view, and the default
+ * for the reason the note above gives. Any wider default imposes boundaries
+ * the data knows nothing about, and a single state straddling one of them
+ * reads as two modes — the exact mistake this diagnostic exists to avoid.
+ * The wider widths stay available for reading gross structure.
+ */
+export const DEFAULT_BUCKET_WIDTH: BucketWidth = 1
 
 export interface HistogramBucket {
   index: number

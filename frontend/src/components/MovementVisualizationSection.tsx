@@ -532,13 +532,6 @@ function MovementVisualizationSection({
   return (
     <section className="movement-section">
       <h3>Background vs Moving Pixels</h3>
-      <p className="content-hint">
-        Takes one frame from the video and compares every pixel with the
-        generated background. Pixels that differ more than the movement
-        threshold count as moving, the rest count as static background.
-        Each pixel is judged on its own — nothing here detects or tracks
-        objects.
-      </p>
 
       {!usable ? (
         <p className="content-hint">
@@ -697,6 +690,13 @@ function MovementVisualizationSection({
               </div>
             </div>
           )}
+
+          <p className="content-hint section-note">
+            Compares every pixel of one frame with the generated background.
+            Pixels differing by more than the movement threshold count as
+            moving, the rest as static background. Each pixel is judged on its
+            own — nothing here detects or tracks objects.
+          </p>
         </>
       )}
     </section>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { checkHealth, getCurrentVideo, type VideoRecord } from './api'
 import BackgroundVariationPage from './pages/BackgroundVariationPage'
+import PixelRangeAnalysisPage from './pages/PixelRangeAnalysisPage'
 import RgbMeanPage from './pages/RgbMeanPage'
 import RgbMedianPage from './pages/RgbMedianPage'
 import VideoInputPage from './pages/VideoInputPage'
@@ -13,6 +14,8 @@ type View =
   | 'rgb-mean'
   | 'rgb-median'
   | 'background-variation'
+  // Not in the sidebar: it is opened from a finished run and belongs to it.
+  | 'pixel-ranges'
 
 const NAV_ITEMS: { view: View; label: string }[] = [
   { view: 'overview', label: 'Overview' },
@@ -22,17 +25,32 @@ const NAV_ITEMS: { view: View; label: string }[] = [
   { view: 'background-variation', label: 'Background Variation' },
 ]
 
+/**
+ * What a finished experiment run hands to the analysis screen.
+ *
+ * Only the generated background travels, because that is the one thing the
+ * analysis cannot get for itself: the pixel timeline, the frames and the
+ * per-pixel model all read the stored input video, which never left the
+ * backend. So opening the analysis re-uploads nothing and re-decodes nothing
+ * that the run already paid for.
+ */
+export interface AnalysisContext {
+  background: string | null
+  label: string
+  from: View
+}
+
 function OverviewPage() {
   return (
     <>
       <h2>Overview</h2>
       <p>
-        R&amp;D proof of concept for extracting a static background from
-        video and generating a foreground mask.
+        R&amp;D proof of concept for extracting a static background from video
+        and generating a foreground mask.
       </p>
       <p className="content-hint">
-        Use the Video Input page to upload the working video. Further
-        experiments will appear in the sidebar as they are added.
+        Upload the working video on Video Input, then run an experiment. Each
+        run offers a pixel and background-range analysis of its result.
       </p>
     </>
   )
@@ -43,6 +61,7 @@ function App() {
   const [view, setView] = useState<View>('overview')
   // The current working input video, shared with all experiment pages.
   const [currentVideo, setCurrentVideo] = useState<VideoRecord | null>(null)
+  const [analysis, setAnalysis] = useState<AnalysisContext | null>(null)
 
   useEffect(() => {
     checkHealth()
@@ -52,6 +71,11 @@ function App() {
       .then(setCurrentVideo)
       .catch(() => setCurrentVideo(null))
   }, [])
+
+  const openAnalysis = (context: AnalysisContext) => {
+    setAnalysis(context)
+    setView('pixel-ranges')
+  }
 
   return (
     <div className="app">
@@ -96,11 +120,31 @@ function App() {
             onVideoChange={setCurrentVideo}
           />
         )}
-        {view === 'rgb-mean' && <RgbMeanPage currentVideo={currentVideo} />}
-        {view === 'rgb-median' && <RgbMedianPage currentVideo={currentVideo} />}
-        {view === 'background-variation' && (
-          <BackgroundVariationPage currentVideo={currentVideo} />
+        {view === 'rgb-mean' && (
+          <RgbMeanPage currentVideo={currentVideo} onAnalyze={openAnalysis} />
         )}
+        {view === 'rgb-median' && (
+          <RgbMedianPage currentVideo={currentVideo} onAnalyze={openAnalysis} />
+        )}
+        {view === 'background-variation' && (
+          <BackgroundVariationPage
+            currentVideo={currentVideo}
+            onAnalyze={openAnalysis}
+          />
+        )}
+        {view === 'pixel-ranges' &&
+          (currentVideo ? (
+            <PixelRangeAnalysisPage
+              currentVideo={currentVideo}
+              background={analysis?.background ?? null}
+              sourceLabel={analysis?.label ?? 'experiments'}
+              onBack={() => setView(analysis?.from ?? 'overview')}
+            />
+          ) : (
+            <p className="content-hint">
+              No input video. Upload one on the Video Input page first.
+            </p>
+          ))}
       </main>
     </div>
   )

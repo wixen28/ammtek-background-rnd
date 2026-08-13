@@ -176,6 +176,65 @@ export async function getPixelTimeline(
   return res.json()
 }
 
+// Per-pixel accepted background ranges over the whole grid. The expensive
+// part of the whole-frame simulation: the video is read once here, and the
+// client then classifies any number of frames against the returned planes.
+export interface PixelRangeModelParams {
+  use_all_frames: boolean
+  target_frames: number
+  max_width: number
+  signal: number
+  range_width: number
+  tolerance: number
+  max_ranges: number
+}
+
+// Inclusive per-pixel bounds as lossless PNG data URLs, in the frame's grid.
+// A range a pixel does not use has lower above upper there, so it accepts
+// nothing — no separate per-pixel count has to be kept in step with these.
+export interface PixelRangePlane {
+  rank: number
+  pixels: number
+  lower: string
+  upper: string
+}
+
+export interface PixelRangeModelResult {
+  use_all_frames: boolean
+  target_frames: number | null
+  every_n: number
+  sampled_frames: number
+  // The grid the model was built on; frames must be requested at this width.
+  width: number
+  height: number
+  source_width: number
+  source_height: number
+  signal: number
+  range_width: number
+  tolerance: number
+  max_ranges: number
+  method: string
+  processing_time_seconds: number
+  // Share of all (pixel, frame) samples the finished model accepts.
+  accepted_sample_share: number
+  // Pixels using exactly 1, 2, … ranges.
+  pixels_by_range_count: number[]
+  ranges: PixelRangePlane[]
+  previews: string[]
+}
+
+export async function runPixelRangeModel(
+  params: PixelRangeModelParams,
+): Promise<PixelRangeModelResult> {
+  const res = await fetch(`${API_BASE_URL}/api/experiments/pixel-range-model`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) throw new Error(await errorDetail(res))
+  return res.json()
+}
+
 // One frame of the current video, for client-side diagnostics. Method
 // independent: it knows nothing about how any background was generated.
 export interface VideoFrame {

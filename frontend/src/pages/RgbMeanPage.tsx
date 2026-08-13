@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { runRgbMean, type RgbMeanResult, type VideoRecord } from '../api'
+import type { AnalysisContext } from '../App'
+import AnalyzeRangesLink from '../components/AnalyzeRangesLink'
 import MovementVisualizationSection from '../components/MovementVisualizationSection'
-import PixelTimelineSection from '../components/PixelTimelineSection'
 
 interface RgbMeanPageProps {
   currentVideo: VideoRecord | null
+  onAnalyze: (context: AnalysisContext) => void
 }
 
 // Labels are UI vocabulary and stay fixed; the values are editable so a
@@ -16,7 +18,7 @@ const PRESET_DEFAULTS = [20, 30, 50]
 // The preset the switcher starts on after a run.
 const DEFAULT_PRESET_INDEX = PRESET_LABELS.indexOf('Recommended')
 
-function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
+function RgbMeanPage({ currentVideo, onAnalyze }: RgbMeanPageProps) {
   const [useAllFrames, setUseAllFrames] = useState(true)
   const [targetFrames, setTargetFrames] = useState(30)
   const [thresholds, setThresholds] = useState<number[]>(PRESET_DEFAULTS)
@@ -86,17 +88,6 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
   return (
     <>
       <h2>RGB Mean</h2>
-      <p>
-        Averages sampled frames per pixel with outlier rejection: samples
-        farther than the threshold (Euclidean RGB distance) from the
-        pixel&apos;s temporal median — foreground passes — are discarded
-        before the mean. Threshold 442 disables rejection (plain mean).
-      </p>
-      <p>
-        All three thresholds are generated in one run — the video is decoded
-        once and the per-pixel median is shared — so you can switch between
-        the results instantly above the background below.
-      </p>
       <p className="content-hint">
         Input: {currentVideo.filename} ({currentVideo.width} ×{' '}
         {currentVideo.height}, {currentVideo.frame_count} frames)
@@ -161,12 +152,6 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
         </button>
       </div>
 
-      <p className="content-hint">
-        {useAllFrames
-          ? `All ${currentVideo.frame_count} frames will be used.`
-          : `~${Math.min(targetFrames, currentVideo.frame_count)} frames will be sampled evenly across the video.`}
-      </p>
-
       {error && <p className="video-error">{error}</p>}
 
       {result && (
@@ -193,6 +178,46 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
             )}
           </p>
 
+          <div
+            className="background-variants"
+            role="group"
+            aria-label="Outlier threshold"
+          >
+            {result.variants.map((variant, i) => (
+              <button
+                key={i}
+                type="button"
+                className={`background-variant${i === selected ? ' background-variant-active' : ''}`}
+                aria-pressed={i === selected}
+                onClick={() => setSelected(i)}
+              >
+                {PRESET_LABELS[i] ?? 'Threshold'}
+                <span className="background-variant-value">
+                  {variant.rejection_threshold}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {selectedVariant && (
+            <div className="experiment-result-grid">
+              <figure className="variation-view">
+                <img src={selectedVariant.background} alt="Generated background" />
+                <figcaption>
+                  <span className="variation-view-title">
+                    Generated background
+                  </span>
+                  <a
+                    href={selectedVariant.background}
+                    download={`rgb-mean-background-threshold-${selectedVariant.rejection_threshold}.png`}
+                  >
+                    Download PNG
+                  </a>
+                </figcaption>
+              </figure>
+            </div>
+          )}
+
           <h3>Sampled frames</h3>
           <div className="preview-row">
             {result.previews.map((src, i) => (
@@ -200,43 +225,19 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
             ))}
           </div>
 
+          {selectedVariant && (
+            <AnalyzeRangesLink
+              onClick={() =>
+                onAnalyze({
+                  background: selectedVariant.background,
+                  label: 'RGB Mean',
+                  from: 'rgb-mean',
+                })
+              }
+            />
+          )}
         </section>
       )}
-
-      <PixelTimelineSection
-        currentVideo={currentVideo}
-        background={selectedVariant?.background ?? null}
-        experimentName="RGB Mean"
-        downloadName={
-          selectedVariant
-            ? `rgb-mean-background-threshold-${selectedVariant.rejection_threshold}.png`
-            : 'rgb-mean-background.png'
-        }
-        backgroundToolbar={
-          result && (
-            <div
-              className="background-variants"
-              role="group"
-              aria-label="Outlier threshold"
-            >
-              {result.variants.map((variant, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className={`background-variant${i === selected ? ' background-variant-active' : ''}`}
-                  aria-pressed={i === selected}
-                  onClick={() => setSelected(i)}
-                >
-                  {PRESET_LABELS[i] ?? 'Threshold'}
-                  <span className="background-variant-value">
-                    {variant.rejection_threshold}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )
-        }
-      />
 
       <MovementVisualizationSection
         currentVideo={currentVideo}
@@ -248,6 +249,21 @@ function RgbMeanPage({ currentVideo }: RgbMeanPageProps) {
             : undefined
         }
       />
+
+      <section className="page-notes">
+        <h4>Notes</h4>
+        <p>
+          Averages sampled frames per pixel with outlier rejection: samples
+          farther than the threshold (Euclidean RGB distance) from the
+          pixel&apos;s temporal median — foreground passes — are discarded
+          before the mean. Threshold 442 disables rejection (plain mean).
+        </p>
+        <p>
+          All three thresholds are generated in one run — the video is decoded
+          once and the per-pixel median is shared — so switching between the
+          results costs nothing.
+        </p>
+      </section>
     </>
   )
 }

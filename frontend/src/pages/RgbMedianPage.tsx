@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { runRgbMedian, type RgbMedianResult, type VideoRecord } from '../api'
+import type { AnalysisContext } from '../App'
+import AnalyzeRangesLink from '../components/AnalyzeRangesLink'
 import MovementVisualizationSection from '../components/MovementVisualizationSection'
-import PixelTimelineSection from '../components/PixelTimelineSection'
 
 interface RgbMedianPageProps {
   currentVideo: VideoRecord | null
+  onAnalyze: (context: AnalysisContext) => void
 }
 
-function RgbMedianPage({ currentVideo }: RgbMedianPageProps) {
+function RgbMedianPage({ currentVideo, onAnalyze }: RgbMedianPageProps) {
   const [useAllFrames, setUseAllFrames] = useState(true)
   const [targetFrames, setTargetFrames] = useState(30)
   const [resizeWidth, setResizeWidth] = useState('')
@@ -57,12 +59,6 @@ function RgbMedianPage({ currentVideo }: RgbMedianPageProps) {
   return (
     <>
       <h2>RGB Median</h2>
-      <p>
-        Takes the per-channel temporal median of the sampled frames and uses
-        it directly as the background. Brief foreground passes cannot move
-        the median, so no outlier rejection is applied — a comparison
-        experiment for RGB Mean + outlier rejection on the same input video.
-      </p>
       <p className="content-hint">
         Input: {currentVideo.filename} ({currentVideo.width} ×{' '}
         {currentVideo.height}, {currentVideo.frame_count} frames)
@@ -115,12 +111,6 @@ function RgbMedianPage({ currentVideo }: RgbMedianPageProps) {
         </button>
       </div>
 
-      <p className="content-hint">
-        {useAllFrames
-          ? `All ${currentVideo.frame_count} frames will be used.`
-          : `~${Math.min(targetFrames, currentVideo.frame_count)} frames will be sampled evenly across the video.`}
-      </p>
-
       {error && <p className="video-error">{error}</p>}
 
       {result && (
@@ -136,6 +126,20 @@ function RgbMedianPage({ currentVideo }: RgbMedianPageProps) {
               : ''}
           </p>
 
+          <div className="experiment-result-grid">
+            <figure className="variation-view">
+              <img src={result.background} alt="Generated background" />
+              <figcaption>
+                <span className="variation-view-title">
+                  Generated background
+                </span>
+                <a href={result.background} download="rgb-median-background.png">
+                  Download PNG
+                </a>
+              </figcaption>
+            </figure>
+          </div>
+
           <h3>Sampled frames</h3>
           <div className="preview-row">
             {result.previews.map((src, i) => (
@@ -143,21 +147,33 @@ function RgbMedianPage({ currentVideo }: RgbMedianPageProps) {
             ))}
           </div>
 
+          <AnalyzeRangesLink
+            onClick={() =>
+              onAnalyze({
+                background: result.background,
+                label: 'RGB Median',
+                from: 'rgb-median',
+              })
+            }
+          />
         </section>
       )}
-
-      <PixelTimelineSection
-        currentVideo={currentVideo}
-        background={result?.background ?? null}
-        experimentName="RGB Median"
-        downloadName="rgb-median-background.png"
-      />
 
       <MovementVisualizationSection
         currentVideo={currentVideo}
         backgroundSrc={result?.background ?? null}
         experimentName="RGB Median"
       />
+
+      <section className="page-notes">
+        <h4>Notes</h4>
+        <p>
+          Takes the per-channel temporal median of the sampled frames and uses
+          it directly as the background. Brief foreground passes cannot move the
+          median, so no outlier rejection is applied — a comparison experiment
+          for RGB Mean + outlier rejection on the same input video.
+        </p>
+      </section>
     </>
   )
 }

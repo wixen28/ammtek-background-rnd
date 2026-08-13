@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, PositiveInt
 
 from app.api.encoding import to_data_url
-from app.processing.background import rgb_mean, rgb_median, variation
+from app.processing.background import pixel_ranges, rgb_mean, rgb_median, variation
 from app.processing.video.pixel_timeline import run_pixel_timeline
 from app.processing.video.sampling import NoCurrentVideoError
 
@@ -133,6 +133,74 @@ def run_background_variation_experiment(request: BackgroundVariationRequest) -> 
         # Lossless and single channel: the mask is a measurement, and JPEG
         # ringing around edges would read as variation that is not there.
         "variation_mask": to_data_url(result.variation_mask, ".png"),
+        "previews": [to_data_url(p, ".jpg") for p in result.previews],
+    }
+
+
+class PixelRangeModelRequest(BaseModel):
+    # Sampled rather than all-frames by default: the model needs enough
+    # samples per state for a quantile, not every frame, and the build is
+    # interactive enough to iterate on only while it stays a few seconds.
+    use_all_frames: bool = False
+    target_frames: int = Field(default=pixel_ranges.DEFAULT_TARGET_FRAMES, ge=2)
+    max_width: int = Field(default=pixel_ranges.DEFAULT_MAX_WIDTH, ge=16)
+    # How much of each pixel's history the accepted ranges have to explain.
+    signal: float = Field(default=pixel_ranges.DEFAULT_SIGNAL, gt=0, le=1)
+    # How much of a single state's own values its box keeps. Separate from
+    # `signal`: one buys more states, the other widens the states it has.
+    range_width: float = Field(default=pixel_ranges.DEFAULT_RANGE_WIDTH, gt=0, le=1)
+    tolerance: int = Field(
+        default=pixel_ranges.DEFAULT_TOLERANCE, ge=0, le=pixel_ranges.MAX_TOLERANCE
+    )
+    max_ranges: int = Field(default=pixel_ranges.MAX_RANGES, ge=1, le=pixel_ranges.MAX_RANGES)
+
+
+@router.post("/experiments/pixel-range-model")
+def run_pixel_range_model_experiment(request: PixelRangeModelRequest) -> dict:
+    try:
+        result = pixel_ranges.run_pixel_range_model(
+            use_all_frames=request.use_all_frames,
+            target_frames=request.target_frames,
+            max_width=request.max_width,
+            signal=request.signal,
+            range_width=request.range_width,
+            tolerance=request.tolerance,
+            max_ranges=request.max_ranges,
+        )
+    except NoCurrentVideoError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "use_all_frames": result.use_all_frames,
+        "target_frames": result.target_frames,
+        "every_n": result.every_n,
+        "sampled_frames": result.sampled_frames,
+        "width": result.width,
+        "height": result.height,
+        "source_width": result.source_width,
+        "source_height": result.source_height,
+        "signal": result.signal,
+        "range_width": result.range_width,
+        "tolerance": result.tolerance,
+        "max_ranges": result.max_ranges,
+        "method": pixel_ranges.METHOD,
+        "processing_time_seconds": result.processing_time_seconds,
+        "accepted_sample_share": result.accepted_sample_share,
+        "pixels_by_range_count": result.pixels_by_range_count,
+        # PNG, and necessarily lossless: these are bounds, not pictures. A
+        # JPEG's ringing would move a box by a few values per pixel and the
+        # client would classify against something the backend never derived.
+        "ranges": [
+            {
+                "rank": plane.rank,
+                "pixels": plane.pixels,
+                "lower": to_data_url(plane.lower, ".png"),
+                "upper": to_data_url(plane.upper, ".png"),
+            }
+            for plane in result.ranges
+        ],
         "previews": [to_data_url(p, ".jpg") for p in result.previews],
     }
 

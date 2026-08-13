@@ -3,13 +3,12 @@ import type { PixelSample } from './api'
 import {
   acceptanceRuns,
   acceptingRangeIndex,
+  bestCut,
   centralInterval,
-  computeAcceptanceView,
   computeBackgroundRanges,
-  DEFAULT_COVERAGE,
+  DEFAULT_RANGE_SETTINGS,
   MAX_BACKGROUND_RANGES,
   otsuSplit,
-  REJECTED_BRIGHTNESS,
 } from './backgroundRanges'
 
 /** Build timeline samples from [r, g, b] triples, one per frame. */
@@ -33,6 +32,13 @@ function counts(pairs: [number, number][]): number[] {
   const bins = new Array<number>(256).fill(0)
   for (const [value, count] of pairs) bins[value] = count
   return bins
+}
+
+/** Prefix sums of a sorted array, as `bestCut` expects them. */
+function prefixOf(sorted: number[]): number[] {
+  const prefix = [0]
+  for (const value of sorted) prefix.push(prefix[prefix.length - 1] + value)
+  return prefix
 }
 
 /**
@@ -82,18 +88,39 @@ describe('otsuSplit', () => {
   })
 })
 
+describe('bestCut', () => {
+  const sorted = [10, 10, 10, 90, 90, 200, 200, 200]
+  const prefix = prefixOf(sorted)
+
+  it('cuts the whole run at its widest gap', () => {
+    expect(bestCut(sorted, prefix, 0, sorted.length)?.cut).toBe(5)
+  })
+
+  // The point of the window form: a state is a contiguous slice of the sorted
+  // order, so splitting it again is the same computation on fewer positions.
+  it('cuts only inside the window it is given', () => {
+    expect(bestCut(sorted, prefix, 0, 5)?.cut).toBe(3)
+    expect(bestCut(sorted, prefix, 5, 8)).toBeNull()
+  })
+
+  it('never cuts between two equal values', () => {
+    // A cut inside a run of one value is not realizable by a threshold.
+    expect(bestCut([7, 7, 7], prefixOf([7, 7, 7]), 0, 3)).toBeNull()
+  })
+})
+
 describe('centralInterval', () => {
-  it('keeps the full range at coverage 1', () => {
+  it('keeps the full range at width 1', () => {
     expect(centralInterval([10, 11, 12, 13, 14], 1)).toEqual([10, 14])
   })
 
   it('trims both tails by frame count, not by value', () => {
-    // 10 samples, coverage 0.6 → keep 6, drop 2 from each end.
+    // 10 samples, width 0.6 → keep 6, drop 2 from each end.
     expect(centralInterval([0, 1, 2, 3, 4, 5, 6, 7, 8, 200], 0.6)).toEqual([2, 7])
   })
 
   it('drops the extra sample from the low side on an odd trim', () => {
-    // 10 samples, coverage 0.8 → keep 8, drop 2: one low, one high.
+    // 10 samples, width 0.8 → keep 8, drop 2: one low, one high.
     expect(centralInterval([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 0.75)).toEqual([1, 8])
   })
 
@@ -101,14 +128,14 @@ describe('centralInterval', () => {
     expect(centralInterval([42], 0.5)).toEqual([42, 42])
   })
 
-  // Float error in `coverage * n` must not buy an extra frame.
+  // Float error in `width * n` must not buy an extra frame.
   it('keeps exactly the requested share when it divides evenly', () => {
     const sorted = Array.from({ length: 10 }, (_, i) => i)
     expect(centralInterval(sorted, 0.9)).toEqual([0, 8])
   })
 })
 
-describe('computeBackgroundRanges — how many ranges', () => {
+describe('computeBackgroundRanges — how many ranges (Accepted signal)', () => {
   it('keeps one range for a pixel that never changes', () => {
     const result = computeBackgroundRanges(samples(repeat([128, 130, 132], 20)))
 
@@ -121,7 +148,10 @@ describe('computeBackgroundRanges — how many ranges', () => {
 
   // The iteration's central case: the same pixel, the same data, two answers.
   it('accepts only the strongest state when it already covers the request', () => {
-    const result = computeBackgroundRanges(twoStatePixel, 0.5)
+    const result = computeBackgroundRanges(twoStatePixel, {
+      signal: 0.5,
+      width: 0.5,
+    })
 
     expect(result.ranges).toHaveLength(1)
     expect(result.ranges[0].modeFrames).toBe(64)
@@ -133,7 +163,7 @@ describe('computeBackgroundRanges — how many ranges', () => {
   })
 
   it('adds the second state when the strongest one falls short', () => {
-    const result = computeBackgroundRanges(twoStatePixel, 0.9)
+    const result = computeBackgroundRanges(twoStatePixel, { signal: 0.9 })
 
     expect(result.ranges).toHaveLength(2)
     expect(result.ranges[0].modeFrames).toBe(64)
@@ -145,29 +175,56 @@ describe('computeBackgroundRanges — how many ranges', () => {
     ])
   })
 
-  // The documented limit of capping at two: a third state is not dropped, it
-  // is absorbed into the box of whichever state it was grouped with, gap and
-  // all. Worth knowing before this is generalized to N states.
-  it('never accepts more than the cap, and absorbs a third state', () => {
+  // Three ranges is what the cap at two used to make impossible: the third
+  // state was absorbed into the box of whichever state it was grouped with,
+  // gap and all. Both behaviours are pinned, because the cap is the control
+  // that shows why the extra range exists.
+  it('separates a third state when three ranges are allowed', () => {
+    const threeStates = samples([
+      ...repeat([20, 20, 20], 10),
+      ...repeat([120, 120, 120], 10),
+      ...repeat([220, 220, 220], 10),
+    ])
+
+    const three = computeBackgroundRanges(threeStates, { signal: 1, width: 1 })
+    expect(three.modeCount).toBe(3)
+    expect(three.ranges).toHaveLength(3)
+    expect(three.ranges.map((range) => range.r).sort((a, b) => a[0] - b[0])).toEqual(
+      [
+        [20, 20],
+        [120, 120],
+        [220, 220],
+      ],
+    )
+    // Nothing between the states is background any more.
+    expect(acceptingRangeIndex(three.ranges, 170, 170, 170)).toBe(-1)
+
+    const two = computeBackgroundRanges(threeStates, {
+      signal: 1,
+      width: 1,
+      maxRanges: 2,
+    })
+    expect(two.ranges[0].r).toEqual([120, 220])
+    expect(acceptingRangeIndex(two.ranges, 170, 170, 170)).toBe(0)
+  })
+
+  it('never accepts more than the cap', () => {
     const result = computeBackgroundRanges(
       samples([
-        ...repeat([20, 20, 20], 10),
-        ...repeat([120, 120, 120], 10),
-        ...repeat([220, 220, 220], 10),
+        ...repeat([10, 10, 10], 6),
+        ...repeat([90, 90, 90], 6),
+        ...repeat([170, 170, 170], 6),
+        ...repeat([250, 250, 250], 6),
       ]),
-      1,
+      { signal: 1, width: 1 },
     )
 
     expect(result.ranges.length).toBeLessThanOrEqual(MAX_BACKGROUND_RANGES)
-    expect(result.modeCount).toBe(2)
-    // The two upper states share one box, which spans the gap between them.
-    expect(result.ranges[0].r).toEqual([120, 220])
-    expect(acceptingRangeIndex(result.ranges, 170, 170, 170)).toBe(0)
   })
 
   // The state is big enough to satisfy the request on paper, but trimming it
-  // to the central coverage leaves the box accepting far fewer frames than
-  // that. The decision has to read what is accepted, or the control promises
+  // to the central width leaves the box accepting far fewer frames than that.
+  // The decision has to read what is accepted, or the control promises
   // coverage it never delivers — measured at 28.6 % accepted for a requested
   // 50 % on the hall's (326, 227) before this was fixed.
   it('adds a second range when the first box under-delivers on its state', () => {
@@ -177,7 +234,7 @@ describe('computeBackgroundRanges — how many ranges', () => {
     )
     const result = computeBackgroundRanges(
       samples([...spreadState, ...repeat([100, 0, 0], 6)]),
-      0.6,
+      { signal: 0.6, width: 0.6, maxRanges: 2 },
     )
 
     // The strongest state holds 70 % of the frames, over the requested 60 %…
@@ -187,13 +244,21 @@ describe('computeBackgroundRanges — how many ranges', () => {
     expect(result.ranges).toHaveLength(2)
   })
 
-  it('honours a lower cap', () => {
-    const result = computeBackgroundRanges(twoStatePixel, 0.9, 1)
+  // Capping at one range must still isolate a state: the comparison is
+  // "the strongest state alone", not "the whole history as one state".
+  it('honours a lower cap without widening the box to the whole history', () => {
+    const result = computeBackgroundRanges(twoStatePixel, {
+      signal: 0.9,
+      maxRanges: 1,
+    })
+
     expect(result.ranges).toHaveLength(1)
+    expect(result.ranges[0].r).toEqual([190, 190])
+    expect(result.achievedCoverage).toBeCloseTo(0.64)
   })
 
   it('reports which channel separated the states, and where', () => {
-    const result = computeBackgroundRanges(twoStatePixel, 0.9)
+    const result = computeBackgroundRanges(twoStatePixel, { signal: 0.9 })
 
     // All three channels separate perfectly here, so red wins the tie.
     expect(result.split!.channel).toBe('r')
@@ -214,7 +279,7 @@ describe('computeBackgroundRanges — how many ranges', () => {
         [170, 100, 200],
         [250, 100, 201],
       ]),
-      0.9,
+      { signal: 0.9, maxRanges: 2 },
     )
 
     expect(result.split!.channel).toBe('b')
@@ -222,7 +287,7 @@ describe('computeBackgroundRanges — how many ranges', () => {
   })
 
   it('records the frame span of each state, so a temporal split is visible', () => {
-    const result = computeBackgroundRanges(twoStatePixel, 0.9)
+    const result = computeBackgroundRanges(twoStatePixel, { signal: 0.9 })
 
     expect([result.ranges[0].firstFrame, result.ranges[0].lastFrame]).toEqual([
       0, 63,
@@ -233,8 +298,8 @@ describe('computeBackgroundRanges — how many ranges', () => {
   })
 })
 
-describe('computeBackgroundRanges — how wide each range is', () => {
-  it('spans the full observed spread of a state at coverage 1', () => {
+describe('computeBackgroundRanges — how wide each range is (Range width)', () => {
+  it('spans the full observed spread of a state at width 1', () => {
     // One bright state with codec-scale jitter, plus a clearly separate dark
     // one so the split falls between the states rather than inside the jitter.
     const result = computeBackgroundRanges(
@@ -246,14 +311,14 @@ describe('computeBackgroundRanges — how wide each range is', () => {
         [100, 0, 0],
         [100, 0, 0],
       ]),
-      1,
+      { signal: 1, width: 1, maxRanges: 2 },
     )
 
     expect(result.ranges[0].r).toEqual([188, 200])
     expect(result.achievedCoverage).toBe(1)
   })
 
-  it('trims the tails of a state as coverage drops', () => {
+  it('trims the tails of a state as the width drops', () => {
     const spread = samples(
       Array.from(
         { length: 20 },
@@ -262,19 +327,71 @@ describe('computeBackgroundRanges — how wide each range is', () => {
     )
 
     // One range only, so the trim is the only thing that moves.
-    const wide = computeBackgroundRanges(spread, 1, 1)
-    const narrow = computeBackgroundRanges(spread, 0.5, 1)
+    const wide = computeBackgroundRanges(spread, { width: 1, maxRanges: 1 })
+    const narrow = computeBackgroundRanges(spread, { width: 0.5, maxRanges: 1 })
 
     expect(narrow.ranges[0].r[0]).toBeGreaterThan(wide.ranges[0].r[0])
     expect(narrow.ranges[0].r[1]).toBeLessThan(wide.ranges[0].r[1])
+  })
+
+  // The separation that makes the two controls worth having: the signal is
+  // what buys ranges, the width is what widens them, and neither does the
+  // other's job.
+  it('changing the width alone never changes how many states were found', () => {
+    for (const width of [0.5, 0.7, 0.9, 1]) {
+      const result = computeBackgroundRanges(twoStatePixel, {
+        signal: 0.9,
+        width,
+      })
+      expect(result.modeCount).toBe(2)
+      expect(result.ranges[0].modeFrames).toBe(64)
+    }
+  })
+
+  it('changing the signal alone never changes a box', () => {
+    const loose = computeBackgroundRanges(twoStatePixel, {
+      signal: 1,
+      width: 0.8,
+    })
+    const tight = computeBackgroundRanges(twoStatePixel, {
+      signal: 0.5,
+      width: 0.8,
+    })
+
+    expect(tight.ranges[0].r).toEqual(loose.ranges[0].r)
+    // …only how many of them there are.
+    expect(tight.ranges).toHaveLength(1)
+    expect(loose.ranges).toHaveLength(2)
+  })
+
+  it('dilates a finished box by the tolerance, clamped to the domain', () => {
+    const result = computeBackgroundRanges(
+      samples(repeat([2, 128, 254], 10)),
+      { tolerance: 5 },
+    )
+
+    expect(result.ranges[0].r).toEqual([0, 7])
+    expect(result.ranges[0].g).toEqual([123, 133])
+    expect(result.ranges[0].b).toEqual([249, 255])
+  })
+
+  // Tolerance is what a quantile cannot express: a pixel with no spread gets
+  // no headroom from `width` at all, so its ordinary noise would be movement.
+  it('lets a zero-spread pixel accept nearby noise', () => {
+    const bare = computeBackgroundRanges(samples(repeat([100, 100, 100], 10)))
+    const padded = computeBackgroundRanges(samples(repeat([100, 100, 100], 10)), {
+      tolerance: 3,
+    })
+
+    expect(acceptingRangeIndex(bare.ranges, 102, 99, 100)).toBe(-1)
+    expect(acceptingRangeIndex(padded.ranges, 102, 99, 100)).toBe(0)
   })
 
   it('leaves trimmed frames rejected, so the achieved coverage is honest', () => {
     // One state, one far outlier frame.
     const result = computeBackgroundRanges(
       samples([...repeat([100, 100, 100], 19), [10, 10, 10]]),
-      0.9,
-      1,
+      { signal: 0.9, width: 0.9, maxRanges: 1 },
     )
 
     expect(result.ranges[0].r).toEqual([100, 100])
@@ -283,14 +400,14 @@ describe('computeBackgroundRanges — how wide each range is', () => {
   })
 
   it('carries the state centre as a swatch colour', () => {
-    const result = computeBackgroundRanges(twoStatePixel, 0.9)
+    const result = computeBackgroundRanges(twoStatePixel, { signal: 0.9 })
 
     expect(result.ranges[0].color).toEqual({ r: 190, g: 200, b: 198 })
     expect(result.ranges[1].color).toEqual({ r: 159, g: 168, b: 171 })
   })
 
   it('counts accepted frames per range and in total consistently', () => {
-    const result = computeBackgroundRanges(twoStatePixel, 0.9)
+    const result = computeBackgroundRanges(twoStatePixel, { signal: 0.9 })
 
     const perRange = result.ranges.reduce((sum, r) => sum + r.acceptedFrames, 0)
     expect(perRange).toBe(result.acceptedFrames)
@@ -299,7 +416,7 @@ describe('computeBackgroundRanges — how wide each range is', () => {
     )
   })
 
-  it('is monotone: raising coverage never rejects a frame it had accepted', () => {
+  it('is monotone: widening a box never rejects a frame it had accepted', () => {
     const noisy = samples([
       ...repeat([190, 200, 198], 30),
       ...repeat([191, 201, 199], 20),
@@ -308,8 +425,11 @@ describe('computeBackgroundRanges — how wide each range is', () => {
     ])
 
     let previous = -1
-    for (const coverage of [0.5, 0.6, 0.7, 0.8, 0.9, 1]) {
-      const { acceptedFrames } = computeBackgroundRanges(noisy, coverage)
+    for (const width of [0.5, 0.6, 0.7, 0.8, 0.9, 1]) {
+      const { acceptedFrames } = computeBackgroundRanges(noisy, {
+        signal: 1,
+        width,
+      })
       expect(acceptedFrames).toBeGreaterThanOrEqual(previous)
       previous = acceptedFrames
     }
@@ -321,19 +441,36 @@ describe('computeBackgroundRanges — guards', () => {
     expect(() => computeBackgroundRanges([])).toThrow(/at least one sample/)
   })
 
-  it('rejects a coverage outside (0, 1]', () => {
+  it('rejects a signal or width outside (0, 1]', () => {
     const input = samples(repeat([100, 100, 100], 4))
-    expect(() => computeBackgroundRanges(input, 0)).toThrow(/coverage/)
-    expect(() => computeBackgroundRanges(input, 1.5)).toThrow(/coverage/)
+    expect(() => computeBackgroundRanges(input, { signal: 0 })).toThrow(/signal/)
+    expect(() => computeBackgroundRanges(input, { signal: 1.5 })).toThrow(/signal/)
+    expect(() => computeBackgroundRanges(input, { width: 0 })).toThrow(/width/)
+    expect(() => computeBackgroundRanges(input, { width: 1.5 })).toThrow(/width/)
   })
 
-  it('defaults to the documented coverage', () => {
-    expect(computeBackgroundRanges(twoStatePixel).coverage).toBe(DEFAULT_COVERAGE)
+  it('rejects a cap outside 1–3', () => {
+    const input = samples(repeat([100, 100, 100], 4))
+    expect(() => computeBackgroundRanges(input, { maxRanges: 0 })).toThrow(
+      /maxRanges/,
+    )
+    expect(() => computeBackgroundRanges(input, { maxRanges: 4 })).toThrow(
+      /maxRanges/,
+    )
+  })
+
+  it('reports the settings it ran with, defaults included', () => {
+    expect(computeBackgroundRanges(twoStatePixel).settings).toEqual(
+      DEFAULT_RANGE_SETTINGS,
+    )
+    expect(
+      computeBackgroundRanges(twoStatePixel, { signal: 0.7 }).settings,
+    ).toEqual({ ...DEFAULT_RANGE_SETTINGS, signal: 0.7 })
   })
 })
 
 describe('acceptingRangeIndex', () => {
-  const { ranges } = computeBackgroundRanges(twoStatePixel, 0.9)
+  const { ranges } = computeBackgroundRanges(twoStatePixel, { signal: 0.9 })
 
   it('accepts a colour inside a box on every channel', () => {
     expect(acceptingRangeIndex(ranges, 190, 200, 198)).toBe(0)
@@ -379,55 +516,5 @@ describe('acceptanceRuns', () => {
 
   it('returns nothing for no frames', () => {
     expect(acceptanceRuns(new Int8Array(0))).toEqual([])
-  })
-})
-
-describe('computeAcceptanceView', () => {
-  const { ranges } = computeBackgroundRanges(twoStatePixel, 0.9)
-
-  /** Two pixels: one in the bright state, one nothing like it. */
-  const frame = () =>
-    new Uint8ClampedArray([190, 200, 198, 255, 20, 30, 40, 255])
-
-  it('keeps accepted pixels in their own colour', () => {
-    const { view } = computeAcceptanceView(frame(), ranges)
-    expect([...view.slice(0, 4)]).toEqual([190, 200, 198, 255])
-  })
-
-  it('dims rejected pixels to grayscale', () => {
-    const { view } = computeAcceptanceView(frame(), ranges)
-    const luma = 0.299 * 20 + 0.587 * 30 + 0.114 * 40
-    const expected = Math.round(luma * REJECTED_BRIGHTNESS)
-
-    expect(view[4]).toBe(expected)
-    expect(view[4]).toBe(view[5])
-    expect(view[5]).toBe(view[6])
-    expect(view[7]).toBe(255)
-  })
-
-  it('counts acceptances per range', () => {
-    const both = new Uint8ClampedArray([
-      190, 200, 198, 255, 159, 168, 171, 255, 0, 0, 0, 255,
-    ])
-    const result = computeAcceptanceView(both, ranges)
-
-    expect(result.acceptedByRange).toEqual([1, 1])
-    expect(result.acceptedCount).toBe(2)
-    expect(result.pixelCount).toBe(3)
-  })
-
-  it('agrees with the per-frame verdicts of the same ranges', () => {
-    const derived = computeBackgroundRanges(twoStatePixel, 0.9)
-    const pixels = new Uint8ClampedArray(twoStatePixel.length * 4)
-    twoStatePixel.forEach((sample, i) => {
-      pixels[i * 4] = sample.r
-      pixels[i * 4 + 1] = sample.g
-      pixels[i * 4 + 2] = sample.b
-      pixels[i * 4 + 3] = 255
-    })
-
-    expect(computeAcceptanceView(pixels, derived.ranges).acceptedCount).toBe(
-      derived.acceptedFrames,
-    )
   })
 })

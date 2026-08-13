@@ -34,6 +34,23 @@ class FrameResult:
     image: np.ndarray
 
 
+def scaled_size(
+    source_width: int, source_height: int, max_width: int | None
+) -> tuple[int, int]:
+    """The (width, height) a frame is served at for a given ``max_width``.
+
+    Shared with the per-pixel range model, which has to be built on exactly
+    the grid single frames are later requested at: the model holds one box
+    per pixel, so a grid that differs by even one row would compare every
+    pixel against its neighbour's ranges. Deriving both from this one
+    function makes that agreement structural rather than a coincidence.
+    """
+    if max_width is None or source_width <= max_width:
+        return source_width, source_height
+    height = max(1, round(source_height * max_width / source_width))
+    return max_width, height
+
+
 def read_frame_at(path: Path, index: int) -> np.ndarray:
     """Return frame ``index`` of the video as a BGR ndarray.
 
@@ -74,9 +91,9 @@ def read_current_frame(
     image = read_frame_at(path, frame_index)
     source_height, source_width = image.shape[:2]
 
-    if max_width is not None and source_width > max_width:
-        height = max(1, round(source_height * max_width / source_width))
-        image = cv2.resize(image, (max_width, height), interpolation=cv2.INTER_AREA)
+    target = scaled_size(source_width, source_height, max_width)
+    if target != (source_width, source_height):
+        image = cv2.resize(image, target, interpolation=cv2.INTER_AREA)
 
     height, width = image.shape[:2]
     return FrameResult(

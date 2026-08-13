@@ -38,6 +38,9 @@ const X_TICKS = [0, 64, 128, 192, 255]
 // label, not by colour.
 const BAND_INK = '#52514e'
 const BAND_FILL_OPACITY = 0.09
+// Edge style per rank, so overlapping or adjacent bands are still tellable
+// apart at a glance: solid, dashed, dotted for ranges 1, 2, 3.
+const RANGE_EDGE_DASH = [undefined, '3 2', '1 2'] as const
 /** Below this the band is too narrow to hold its rank label legibly. */
 const MIN_BAND_FOR_LABEL = 14
 
@@ -163,8 +166,11 @@ function RgbHistogramChart({
                 strokeWidth="1"
               />
             </svg>
-            accepted background range ({ranges.ranges.length === 1 ? '1' : '1, 2'}
-            ) at {formatShare(ranges.coverage)} of the signal
+            accepted background range (
+            {ranges.ranges.map((range) => range.rank).join(', ')}) at{' '}
+            {formatShare(ranges.settings.signal)} signal ·{' '}
+            {formatShare(ranges.settings.width)} width
+            {ranges.settings.tolerance > 0 && ` ±${ranges.settings.tolerance}`}
           </span>
         )}
       </div>
@@ -271,7 +277,7 @@ function RgbHistogramChart({
                         y2={plotBottom(row)}
                         stroke={BAND_INK}
                         strokeWidth={1}
-                        strokeDasharray={i === 0 ? undefined : '3 2'}
+                        strokeDasharray={RANGE_EDGE_DASH[i]}
                       />
                     ))}
                     {/* Labelled on the first panel only: the rank is the same

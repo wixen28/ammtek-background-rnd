@@ -168,6 +168,12 @@ Two things to read off this:
 
 ## Open questions
 
+> Superseded by [per-pixel background ranges](2026-08-13-per-pixel-background-ranges.md),
+> which answers the first and last items below: ranges are now derived per pixel
+> (sampled and downscaled, ~2.5 s), three states are separated rather than
+> absorbed, and the single control has been split into Accepted signal, Range
+> width and Tolerance.
+
 - **Per-pixel ranges.** The natural next step, and the one that would turn the
   frame test into a real background/foreground decision: derive ranges for
   every pixel, not just the selected one. That needs per-pixel value
@@ -175,7 +181,9 @@ Two things to read off this:
   bins, ~0.5 GB at uint16, plus a full decode pass — and the strength control
   would stop being interactive unless several P values are precomputed in the
   one pass (the way RGB Mean already returns one background per rejection
-  threshold). Worth sizing before building.
+  threshold). Worth sizing before building. *(Done: sorting per pixel rather
+  than histogramming avoided the bin array entirely, and sampling 240 frames at
+  360 px kept a build to 2.5 s.)*
 - **Is the split temporal rather than distributional?** Range 2's frame span
   (258–2720) mixes the crane passes with the sustained post-change state. A
   global scene-change detector plus per-segment backgrounds may be the more
@@ -189,3 +197,5 @@ Two things to read off this:
 - Three states are absorbed, not dropped: with the cap at two, the third state
   shares a box with whichever group it was split into, and that box spans the
   gap between them. A test documents this. Relevant before generalising to N.
+  *(Done: the cap is now 1 / 2 / 3, and both behaviours are pinned — three
+  ranges separate the third state, two still absorb it.)*
